@@ -1,0 +1,134 @@
+{% load static %}
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8"/>
+    <title>{% block title %}{{ title }}{% endblock %}</title>
+
+    {% block extra_head %}
+        {# -- Add any extra HTML heads tags here - except scripts and styles -- #}
+    {% endblock %}
+
+    {% block favicon %}
+        {# -- Maybe replace the favicon -- #}
+        <link rel="icon" type="image/png" href="{% static 'drf-yasg/swagger-ui-dist/favicon-32x32.png' %}"/>
+    {% endblock %}
+
+    {% block main_styles %}
+        <link rel="stylesheet" type="text/css" href="{% static 'drf-yasg/style.css' %}"/>
+        <link rel="stylesheet" type="text/css" href="{% static 'drf-yasg/swagger-ui-dist/swagger-ui.css' %}">
+    {% endblock %}
+    {% block extra_styles %}
+        {# -- Add any additional CSS scripts here -- #}
+    {% endblock %}
+</head>
+
+<body class="swagger-body">
+
+{% block extra_body %}
+    {# -- Add any header/body markup here (rendered BEFORE the swagger-ui/redoc element) -- #}
+{% endblock %}
+
+<div id="swagger-ui"></div>
+
+{% block footer %}
+    {# -- Add any footer markup here (rendered AFTER the swagger-ui/redoc element) -- #}
+{% endblock %}
+
+<script id="swagger-settings" type="application/json">{{ swagger_settings | safe }}</script>
+<script id="oauth2-config" type="application/json">{{ oauth2_config | safe }}</script>
+
+{% block main_scripts %}
+    <script src="{% static 'drf-yasg/swagger-ui-dist/swagger-ui-bundle.js' %}"></script>
+    <script src="{% static 'drf-yasg/swagger-ui-dist/swagger-ui-standalone-preset.js' %}"></script>
+    <script src="{% static 'drf-yasg/insQ.min.js' %}"></script>
+    <script src="{% static 'drf-yasg/immutable.min.js' %}"></script>
+    <script src="{% static 'drf-yasg/swagger-ui-init.js' %}"></script>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+  swaggerUiConfig.layout = "BaseLayout";
+  // any other override you'd like to do
+    function getCookie(name) {
+        return document.cookie
+            .split('; ')
+            .find(function(r) { return r.startsWith(name + '='); })
+            ?.split('=')[1] || '';
+    }
+    window.onload = function() {
+        const ui = SwaggerUIBundle({
+            url: '/swagger.json',
+            dom_id: '#swagger-ui',
+            requestInterceptor: (req) => {
+                req.credentials = 'include'; // Cookie を送る
+                const token = getCookie('csrftoken'); // CSRF Cookie 名がデフォルトの場合
+                if (token) req.headers['X-CSRFToken'] = token;
+                return req;
+            },
+            });
+        window.ui = ui
+    }
+
+    function apiLogin() {
+        var username = window.prompt('Username:');
+        if (username === null) { return; }
+        var password = window.prompt('Password:');
+        if (password === null) { return; }
+        var token = getCookie('csrftoken');
+        fetch('/api/ext/v1/auth/login', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': token || ''
+            },
+            credentials: 'include',
+            body: JSON.stringify({ username: username, password: password })
+        }).then(function(resp) {
+            if (resp.ok) { window.location.reload(); return; }
+            return resp.json().then(function(j) {
+                window.alert(j && (j.message || j.error) ? (j.message || j.error) : 'Login failed');
+            });
+        }).catch(function() {
+            window.alert('Login error');
+        });
+    }
+</script>
+{% endblock %}
+<a id="oauth2-redirect-url" href="{% static 'drf-yasg/swagger-ui-dist/oauth2-redirect.html' %}" class="hidden"></a>
+
+{% if USE_SESSION_AUTH %}
+    <div id="django-session-auth" class="hidden">
+        {% block session_auth_button %}
+            {% csrf_token %}
+
+            {% block user_context_message %}
+                {% if request.user.is_authenticated or request.session.base_api_authenticated %}
+                    <div class="hello">
+                        <span class="django-session">Django</span> <span
+                            class="label label-primary">{% if request.user.is_authenticated %}{{ request.user }}{% else %}{{ request.session.base_api_user_info.username|default:"API User" }}{% endif %}</span>
+                    </div>
+                {% endif %}
+            {% endblock %}
+
+            {% if request.user.is_authenticated or request.session.base_api_authenticated %}
+                <div class='btn authorize'>
+                    <a id="auth" class="header__btn" href="{{ LOGOUT_URL }}?next={{ request.path }}" data-sw-translate>
+                        {% block django_logout_message %}
+                            Django Logout
+                        {% endblock %}
+                    </a>
+                </div>
+            {% else %}
+                <div class='btn authorize'>
+                    <button id="auth" class="header__btn" type="button" onclick="apiLogin()" data-sw-translate>
+                        API Login
+                    </button>
+                </div>
+            {% endif %}
+        {% endblock %}
+    </div>
+{% endif %}
+</body>
+
+</html>
+

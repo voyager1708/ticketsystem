@@ -1,0 +1,39 @@
+from django.db import models
+
+
+class TicketDesign(models.Model):
+    """
+    Ticket template design for NFT tickets (movie-ticket style).
+
+    Stored in MEDIA:
+    - template_image: background PNG/JPG
+    - layout: JSON config controlling positions/sizes for QR + text
+    - checkin_reward_image: image to be sent as NFT reward after check-in
+    """
+
+    name = models.CharField(max_length=100, default="Default", help_text="Design name for identification")
+    template_image = models.ImageField(upload_to="ticket_templates/", null=True, blank=True)
+    layout = models.JSONField(default=dict, blank=True)
+    checkin_reward_image = models.ImageField(
+        upload_to="ticket_templates/checkin_rewards/",
+        null=True,
+        blank=True,
+        help_text="Image to be sent as NFT reward after check-in completion"
+    )
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "ticket_system_ticket_design"
+        indexes = [
+            models.Index(fields=["is_active"], name="idx_ticket_design_active"),
+        ]
+
+    def __str__(self):
+        return f"TicketDesign {self.id}: {self.name}"
+
+    @classmethod
+    def get_active(cls):
+        return cls.objects.filter(is_active=True).order_by("-updated_at").first()
+

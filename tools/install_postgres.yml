@@ -1,0 +1,37 @@
+---
+- name: Install/Start PostgreSQL container for ticket_system
+  hosts: all
+  become: true
+  vars:
+    project_root: /mnt/extra/ticket_system
+    env_file: /mnt/extra/ticket_system/.env
+    postgres_db: ticket_system
+    postgres_user: postgres
+    postgres_password: postgres
+  tasks:
+    - name: Ensure .env exists
+      ansible.builtin.file:
+        path: "{{ env_file }}"
+        state: touch
+        mode: "0644"
+
+    - name: Ensure PostgreSQL env vars are set in .env
+      ansible.builtin.lineinfile:
+        path: "{{ env_file }}"
+        create: true
+        regexp: "^{{ item.key }}="
+        line: "{{ item.key }}={{ item.value }}"
+      loop:
+        - { key: "POSTGRES_DB", value: "{{ postgres_db }}" }
+        - { key: "POSTGRES_USER", value: "{{ postgres_user }}" }
+        - { key: "POSTGRES_PASSWORD", value: "{{ postgres_password }}" }
+        - { key: "SQL_DATABASE", value: "{{ postgres_db }}" }
+        - { key: "SQL_USER", value: "{{ postgres_user }}" }
+        - { key: "SQL_PASSWORD", value: "{{ postgres_password }}" }
+        - { key: "SQL_HOST", value: "ticket_db" }
+        - { key: "SQL_PORT", value: "5432" }
+
+    - name: Start PostgreSQL service via docker compose
+      ansible.builtin.command: docker compose up -d ticket_db
+      args:
+        chdir: "{{ project_root }}"
