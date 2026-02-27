@@ -96,7 +96,7 @@ from getpass import getpass
 os.environ["API_BASE"] = "http://127.0.0.1:8000"
 API_BASE = os.environ["API_BASE"]
 
-# ベースAPI URL（app/ticket_config/settings.py 準拠）
+# ベースAPI URL（app/ticket_system/settings.py 準拠）
 os.environ["BASE_API_URL"] = "https://linode.buxbit.net"
 
 USERNAME = input("Base API username: ").strip()
@@ -1723,4 +1723,4 @@ print("saved:", summary_path)
 - チケット作成: `TicketCreateAPIView`
 - 画像取得: `TicketImageAPIView`
 - チェックイン: `TicketCheckinAPIView`
-- ベースAPI接続先設定: `app/ticket_config/settings.py` の `BASE_API_URL`
+- ベースAPI接続先設定: `app/ticket_system/settings.py` の `BASE_API_URL`

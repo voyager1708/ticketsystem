@@ -50,7 +50,7 @@ function apiLogin() {
 
 **解決策**: `ticket_service`を`drf_yasg`より前に配置。
 
-**ファイル**: `app/ticket_config/settings.py`
+**ファイル**: `app/ticket_system/settings.py`
 
 ```python
 INSTALLED_APPS = [
@@ -107,7 +107,7 @@ SESSION_COOKIE_DOMAIN=.buxbit.net
 CSRF_COOKIE_DOMAIN=.buxbit.net
 ```
 
-**ファイル**: `app/ticket_config/settings.py`
+**ファイル**: `app/ticket_system/settings.py`
 
 ```python
 SESSION_COOKIE_DOMAIN = os.environ.get('SESSION_COOKIE_DOMAIN', None)
@@ -280,7 +280,7 @@ SESSION_COOKIE_DOMAIN=.buxbit.net
 CSRF_COOKIE_DOMAIN=.buxbit.net
 ```
 
-### app/ticket_config/settings.py
+### app/ticket_system/settings.py
 
 ```python
 # Session settings
