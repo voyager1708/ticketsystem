@@ -26,7 +26,7 @@
 │   │   └── services/
 │   │       ├── base_api_client.py    # ベースAPI呼び出しクライアント
 │   │       └── ticket_service.py     # チケット画像生成ロジック
-│   ├── ticket_config/            # Djangoプロジェクト設定
+│   ├── ticket_system/            # Djangoプロジェクト設定
 │   │   ├── settings.py           # Django設定
 │   │   └── urls.py               # ルートURL設定
 │   ├── static/                   # 静的ファイル

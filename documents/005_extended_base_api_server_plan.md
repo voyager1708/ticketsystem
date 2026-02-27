@@ -953,7 +953,7 @@ if recipient_paymail:
 # TicketDesignの状態を確認
 docker compose exec ticket_web python -c "
 import os
-os.environ['DJANGO_SETTINGS_MODULE'] = 'ticket_config.settings'
+os.environ['DJANGO_SETTINGS_MODULE'] = 'ticket_system.settings'
 import django
 django.setup()
 
@@ -1156,7 +1156,7 @@ echo "Setting up default TicketDesign..."
 python manage.py setup_default_ticket_design || echo "TicketDesign setup skipped or failed"
 
 # サーバーを実行
-exec gunicorn ticket_config.wsgi:application --bind 0.0.0.0:8001 ...
+exec gunicorn ticket_system.wsgi:application --bind 0.0.0.0:8001 ...
 ```
 
 #### 起動ログ例

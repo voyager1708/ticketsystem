@@ -31,5 +31,5 @@ echo "Setting up default TicketDesign..."
 python manage.py setup_default_ticket_design || echo "TicketDesign setup skipped or failed"
 
 # サーバーを実行
-exec /bin/sh -c "gunicorn ticket_config.wsgi:application --bind 0.0.0.0:8001 --workers $WORKERS --timeout $TIMEOUT"
+exec /bin/sh -c "gunicorn ticket_system.wsgi:application --bind 0.0.0.0:8001 --workers $WORKERS --timeout $TIMEOUT"
 
