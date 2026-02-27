@@ -19,14 +19,6 @@ services:
       - ./.env
     # volumes は意図的に未設定。単体起動を防ぐため、必ず bin/start-dev または bin/start-prod を使うこと。
     # docker compose のみで起動するとアプリがマウントされず失敗する。
-    networks:
-      - betawallet-dev_default              # betawallet-dev のネットワークに参加して db に接続
-    # DB は betawallet-dev の Docker db を使用。ticket_db は使わない。
-    # vhost は betawallet-dev の nginx で ticket.buxbit.net として提供。ticket_nginx は使わない。
-
-networks:
-  betawallet-dev_default:
-    external: true
 
   # ticket_nginx:
   #  build:

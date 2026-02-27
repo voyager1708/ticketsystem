@@ -15,6 +15,7 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.contrib import admin
+from django.http import HttpResponse
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
@@ -24,8 +25,14 @@ from drf_yasg.views import get_schema_view
 from rest_framework import permissions
 from ticket_service.views import CustomLoginView, LogoutRedirectView
 
+def healthz(request):
+    """Step 0: ヘルスチェック用。200 を返す。"""
+    return HttpResponse(status=200)
+
+
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('healthz', healthz),
     path('', RedirectView.as_view(url='/swagger/', permanent=False), name='root-redirect'),
     path('api/', include('ticket_service.urls')),
     # Custom login/logout placed BEFORE contrib auth include
