@@ -86,12 +86,29 @@ git checkout handson/v1-start
 
 ## 2. 推奨手順（Docker）
 
-迷ったらこの手順を選んでください。
+以下の手順で進んでください。
 
-```bash
-docker compose -f docker-compose.dev.yml up -d --build
-curl -fsS http://localhost:8000/healthz
-```
+1. **`.env` の用意**  
+   `.env` が無い場合は、プロジェクトルートで以下を実行する。
+   ```bash
+   cp .env.example .env
+   ```
+   （必要に応じて `.env` 内の `SECRET_KEY` や DB 接続先などを編集する。）
+
+2. **コンテナのビルド・起動**  
+   `docker-compose.dev.yml` は上書き用のため、**必ずベースの `docker-compose.yml` と合わせて**指定する。
+   ```bash
+   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+   ```
+
+3. **動作確認**
+   ```bash
+   curl -fsS http://localhost:8000/healthz
+   ```
+
+※docker は最初は入っていないので、エラーになります。
+※エージェントにエラー内容を伝えてdockerのインストールの指示をだしてみましょう。
+※インストールができたら再度起動を試します。
 
 ### 成功条件（Step 0）
 
@@ -101,7 +118,7 @@ curl -fsS http://localhost:8000/healthz
 ### 終了時
 
 ```bash
-docker compose -f docker-compose.dev.yml down
+docker compose -f docker-compose.yml -f docker-compose.dev.yml down
 ```
 
 ---

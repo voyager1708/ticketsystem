@@ -9,10 +9,10 @@ services:
       context: ./app
       dockerfile: Dockerfile
       args:
-        UID: ${HOST_UID}
-        GID: ${HOST_GID}
-        USERNAME: ${CONTAINER_USERNAME}
-        NUM_WORKERS: ${NUM_WORKERS}
+        UID: ${HOST_UID:-1000}
+        GID: ${HOST_GID:-1000}
+        USERNAME: ${CONTAINER_USERNAME:-app}
+        NUM_WORKERS: ${NUM_WORKERS:-5}
     ports:
       - "8001:8001"
     env_file:
