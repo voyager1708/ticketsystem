@@ -1,4 +1,14 @@
 #!/bin/bash
+set -e
+
+# 本番/開発の明示が必要。docker-compose.yml 単体での起動を防ぐ。
+if [ -z "${DEPLOY_ENV}" ]; then
+  echo "ERROR: DEPLOY_ENV is not set. Do not run 'docker compose up' alone." >&2
+  echo "Use: ./bin/start-dev  or  ./bin/start-prod" >&2
+  echo "  (docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d)" >&2
+  echo "  (docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d)" >&2
+  exit 1
+fi
 
 # サーバーのワーカー数を設定、デフォルトは5
 WORKERS="${NUM_WORKERS:-5}"
@@ -8,6 +18,7 @@ MYUID=`/usr/bin/id -u`
 MYGID=`/usr/bin/id -G`
 MYUSERNAME=`/usr/bin/id -un`
 
+echo "DEPLOY_ENV=[${DEPLOY_ENV}]"
 echo "Starting the server UID:[${MYUID}],GID[${MYGID}],USERNAME:[${MYUSERNAME}] with [${WORKERS}] workers, timeout:[${TIMEOUT}]s ..."
 echo "Starting the server HOST_UID:[${HOST_UID}],HOST_GID[${HOST_GID}],HOST_USERNAME:[${HOST_USERNAME}] with [${NUM_WORKERS}] workers ..."
 

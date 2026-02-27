@@ -60,13 +60,21 @@ def _get_env(key: str, default=None):
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-change-me-in-production')
+_SECRET_KEY = os.environ.get('SECRET_KEY', '') or _get_env('SECRET_KEY', '')
+SECRET_KEY = _SECRET_KEY if _SECRET_KEY.strip() else 'django-insecure-change-me-in-production'
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 
-_ALLOWED_HOSTS = _get_env('ALLOWED_HOSTS', 'localhost,127.0.0.1')
-ALLOWED_HOSTS = [h.strip() for h in _ALLOWED_HOSTS.split(',') if h and h.strip()]
+# ALLOWED_HOSTS: DOMAIN_NAME（サーバのFQDN）を優先。未設定時は ALLOWED_HOSTS またはデフォルト
+_DOMAIN_NAME = _get_env('DOMAIN_NAME', '').strip()
+if _DOMAIN_NAME:
+    _hosts = [h.strip() for h in _DOMAIN_NAME.split(',') if h and h.strip()]
+    _hosts.extend(['localhost', '127.0.0.1'])
+    ALLOWED_HOSTS = list(dict.fromkeys(_hosts))  # 重複除去・順序保持
+else:
+    _ALLOWED_HOSTS = _get_env('ALLOWED_HOSTS', 'localhost,127.0.0.1')
+    ALLOWED_HOSTS = [h.strip() for h in _ALLOWED_HOSTS.split(',') if h and h.strip()]
 
 
 # Application definition
@@ -190,6 +198,7 @@ SWAGGER_SETTINGS = {
     'SECURITY_DEFINITIONS': {},
     'LOGOUT_URL': '/accounts/logout/',
     'USE_SESSION_AUTH': True,  # Enable session authentication button in Swagger UI
+    'USE_COMPAT_RENDERERS': False,  # Silence drf-yasg DeprecationWarning (new format without '.' prefix)
 }
 
 # Login URL for Swagger UI (used by apiLogin() function)

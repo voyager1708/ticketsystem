@@ -1,0 +1,9 @@
+# 開発環境用 override。必ず bin/start-dev を使って起動すること。
+# docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+services:
+  ticket_web:
+    volumes:
+      - ./app:/home/app/web
+      - ./.env:/home/app/.env
+    environment:
+      - DEPLOY_ENV=development

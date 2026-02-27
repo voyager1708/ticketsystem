@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+CALLED_FROM="${PWD}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+if [[ "${CALLED_FROM}" == "${SCRIPT_DIR}" ]]; then
+  echo "Do not run from bin/. Run from project root:" >&2
+  echo "  cd ${ROOT} && ./bin/$(basename "$0")" >&2
+  exit 1
+fi
+cd "$ROOT"
+if [[ "${ROOT}" == *"ticketsystem-dev"* ]]; then
+  echo "Current project is DEV (ticketsystem-dev). Use stop-dev or run from ticketsystem for PROD." >&2
+  exit 1
+elif [[ "${ROOT}" != *"ticketsystem"* ]]; then
+  echo "Current project path does not look like ticketsystem/ticketsystem-dev. Abort." >&2
+  exit 1
+fi
+exec docker compose -f docker-compose.yml -f docker-compose.prod.yml down "$@"

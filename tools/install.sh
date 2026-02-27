@@ -6,6 +6,7 @@ set -euo pipefail
 # What this does:
 # - Sync repo contents into INSTALL_ROOT (default: /mnt/extra/ticketsystem)
 # - Preserve runtime data directories (app/logs, app/media) during sync
+# - If .env exists and SECRET_KEY is empty or placeholder, generate a random one
 # - Ensure Python venv exists and install Python deps
 # - Optionally build Tailwind assets (theme/static_src) if present, and run collectstatic
 #
@@ -182,6 +183,81 @@ if [[ -f "${SRC_ENV}" ]]; then
   chmod 600 "${DST_ENV}" || true
 else
   echo "[install] NOTE: .env not found in source directory. (OK if you manage env on the server)"
+fi
+
+# HOST_UID / HOST_GID を実行ユーザの UID/GID に更新（Docker などで使う）
+if [[ -f "${DST_ENV}" ]]; then
+  RUN_UID=$(id -u)
+  RUN_GID=$(id -g)
+  INSTALL_DST_ENV="${DST_ENV}" INSTALL_UID="${RUN_UID}" INSTALL_GID="${RUN_GID}" python3 -c '
+import os
+path = os.environ["INSTALL_DST_ENV"]
+uid = os.environ["INSTALL_UID"]
+gid = os.environ["INSTALL_GID"]
+lines = open(path).readlines()
+out = []
+uid_done = gid_done = False
+for line in lines:
+    s = line.strip()
+    if s.startswith("HOST_UID="):
+        out.append("HOST_UID=" + uid + "\n")
+        uid_done = True
+    elif s.startswith("HOST_GID="):
+        out.append("HOST_GID=" + gid + "\n")
+        gid_done = True
+    else:
+        out.append(line)
+if not uid_done:
+    out.append("HOST_UID=" + uid + "\n")
+if not gid_done:
+    out.append("HOST_GID=" + gid + "\n")
+open(path, "w").writelines(out)
+'
+  echo "[install] HOST_UID=${RUN_UID} HOST_GID=${RUN_GID} (runtime user)"
+  if chown "${RUN_UID}:${RUN_GID}" "${DST_ENV}" 2>/dev/null; then
+    echo "[install] chown ${RUN_UID}:${RUN_GID} ${DST_ENV}"
+  else
+    chmod 644 "${DST_ENV}" 2>/dev/null && echo "[install] chmod 644 ${DST_ENV} (chown skipped, need rights)"
+  fi
+fi
+
+# SECRET_KEY が空またはプレースホルダーならランダム生成して設定
+if [[ -f "${DST_ENV}" ]]; then
+  CURRENT_SECRET="$(
+    grep -E '^SECRET_KEY=' "${DST_ENV}" 2>/dev/null \
+    | cut -d= -f2- \
+    | sed -e 's/^["'\'']//' -e 's/["'\'']$//' \
+    | tr -d '\n\r' \
+    | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
+  )"
+  if [[ -z "${CURRENT_SECRET}" ]] \
+     || [[ "${CURRENT_SECRET}" == "your-secret-key-here" ]] \
+     || [[ "${CURRENT_SECRET}" == "django-insecure-change-me-in-production" ]]; then
+    if ! command -v openssl >/dev/null 2>&1; then
+      echo "[install] ERROR: SECRET_KEY is empty/placeholder and openssl is not available. Install openssl or set SECRET_KEY in .env" >&2
+      exit 1
+    fi
+    NEW_SECRET="$(openssl rand -base64 50 | tr -d '\n\r')"
+    echo "[install] SECRET_KEY empty or placeholder; generating and setting random value..."
+    INSTALL_DST_ENV="${DST_ENV}" INSTALL_NEW_SECRET="${NEW_SECRET}" python3 -c '
+import os
+path = os.environ["INSTALL_DST_ENV"]
+key = os.environ["INSTALL_NEW_SECRET"]
+lines = open(path).readlines()
+out = []
+done = False
+for line in lines:
+    s = line.strip()
+    if s.startswith("SECRET_KEY="):
+        out.append("SECRET_KEY=" + key + "\n")
+        done = True
+    else:
+        out.append(line)
+if not done:
+    out.append("SECRET_KEY=" + key + "\n")
+open(path, "w").writelines(out)
+'
+  fi
 fi
 
 echo "[install] ensuring runtime directories..."

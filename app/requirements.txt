@@ -1,6 +1,6 @@
-Django>=4.2.0
+Django>=5.2,<5.3
 djangorestframework>=3.14.0
-drf-yasg>=1.21.7
+drf-yasg>=1.21.14
 Pillow>=10.0.0
 qrcode[pil]>=7.4.0
 requests>=2.31.0

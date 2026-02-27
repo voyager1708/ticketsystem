@@ -23,6 +23,36 @@ from ticket_service.models import TicketDesign
 
 logger = logging.getLogger('ticket_service.views')
 
+# 認証未提供時の共通メッセージ（DRF と同様）
+UNAUTHENTICATED_DETAIL = "Authentication credentials were not provided."
+
+
+def _has_session_credentials(request) -> bool:
+    """リクエストにベースAPI用のセッション（Cookie または Django セッション）があるか"""
+    if request.COOKIES.get('sessionid'):
+        return True
+    if request.session.get('base_api_cookies'):
+        return True
+    return False
+
+
+def _get_proxy_cookies(request) -> dict:
+    """
+    プロキシでベースAPIに送るクッキーを取得。
+    /ticket/create などと同様に、Django セッションの base_api_cookies を優先し、
+    なければ request.COOKIES の sessionid/csrftoken を使う。
+    """
+    base_api_cookies = request.session.get('base_api_cookies', {})
+    if base_api_cookies:
+        return base_api_cookies
+    cookies = {}
+    if request.COOKIES.get('sessionid'):
+        cookies['sessionid'] = request.COOKIES.get('sessionid')
+    if request.COOKIES.get('csrftoken'):
+        cookies['csrftoken'] = request.COOKIES.get('csrftoken')
+    return cookies
+
+
 DEFAULT_TICKET_DESIGN_LAYOUT = (
     '{\n'
     '  "text": {\n'
@@ -264,14 +294,14 @@ class BaseAPIProxyMixin:
         url = f"{api_client.base_url}{path}"
 
         session = requests.Session()
-        # クッキーをセッションに設定（ドメインを指定しない - requestsが自動的に処理）
-        logger.debug(f"Proxy request to {url}, cookies: {list(request.COOKIES.keys())}")
-        for cookie_name, cookie_value in request.COOKIES.items():
-            # ドメインを指定せずにクッキーを設定（requestsがURLに基づいて送信）
+        # /ticket/create と同様に Django セッションの base_api_cookies を優先してベースAPIに送る
+        proxy_cookies = _get_proxy_cookies(request)
+        logger.debug(f"Proxy request to {url}, cookies: {list(proxy_cookies.keys())}")
+        for cookie_name, cookie_value in proxy_cookies.items():
             session.cookies.set(cookie_name, cookie_value)
 
         headers = {}
-        csrf_token = request.COOKIES.get('csrftoken') or request.headers.get('X-CSRFToken')
+        csrf_token = proxy_cookies.get('csrftoken') or request.headers.get('X-CSRFToken')
         if csrf_token:
             headers['X-CSRFToken'] = csrf_token
         if request.headers.get('Accept'):
@@ -452,14 +482,19 @@ class AuthLogoutProxyAPIView(BaseAPIProxyMixin, APIView):
     def get(self, request):
         response = self._proxy_request(request, "GET", "/api/v1/auth/logout")
         
-        # ログアウト時にDjangoセッションもクリア
-        if response.status_code == 200:
+        # ログアウト時にDjangoセッションもクリア（200 でも 401 でもクリアする）
+        if response.status_code in (200, 401):
             try:
                 request.session.pop('base_api_authenticated', None)
                 request.session.pop('base_api_user_info', None)
+                request.session.pop('base_api_cookies', None)
                 request.session.save()
             except Exception as e:
                 logger.warning(f"Failed to clear session info after logout: {e}")
+        
+        # ベースAPIが 401（未ログイン）を返しても、拡張API側はセッションを消して 200 を返す（冪等）
+        if response.status_code == 401:
+            return JsonResponse({"message": "Already logged out"}, status=200)
         
         return response
 
@@ -474,9 +509,20 @@ class AuthUserProxyAPIView(BaseAPIProxyMixin, APIView):
         operation_summary="User info (proxy)",
         operation_description="拡張API経由でベースAPIのユーザー情報を取得",
         tags=["auth"],
-        responses={200: openapi.Response("User info")},
+        responses={
+            200: openapi.Response("User info"),
+            401: openapi.Response(
+                "Authentication required",
+                openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={"detail": openapi.Schema(type=openapi.TYPE_STRING)},
+                ),
+            ),
+        },
     )
     def get(self, request):
+        if not _has_session_credentials(request):
+            return JsonResponse({"detail": UNAUTHENTICATED_DETAIL}, status=401)
         return self._proxy_request(request, "GET", "/api/v1/user/info")
 
 
@@ -493,11 +539,11 @@ class TicketImageAPIView(APIView):
     permission_classes = [AllowAny]  # セッションクッキーで認証するため、DRFの認証は不要
     
     def get(self, request, nft_origin: str):
-        # セッションクッキーを取得
+        # セッションクッキーを取得（認証未提供時は共通メッセージで 401）
         session_cookies = self._extract_session_cookies(request)
         if not session_cookies:
             return Response(
-                {"error": "Authentication required. Please login first."},
+                {"detail": UNAUTHENTICATED_DETAIL},
                 status=status.HTTP_401_UNAUTHORIZED
             )
         
@@ -738,7 +784,7 @@ class TicketCheckinAPIView(APIView):
         session_cookies = self._extract_session_cookies(request)
         if not session_cookies:
             return Response(
-                {"error": "Authentication required"},
+                {"detail": UNAUTHENTICATED_DETAIL},
                 status=status.HTTP_401_UNAUTHORIZED
             )
         
@@ -794,7 +840,7 @@ class TicketCheckinAPIView(APIView):
         print(f"Session cookies: {list(session_cookies.keys()) if session_cookies else 'None'}", flush=True)
         if not session_cookies:
             return Response(
-                {"error": "Authentication required"},
+                {"detail": UNAUTHENTICATED_DETAIL},
                 status=status.HTTP_401_UNAUTHORIZED
             )
         
@@ -1103,11 +1149,11 @@ class TicketCreateAPIView(APIView):
         },
     )
     def post(self, request):
-        # セッションクッキーを取得
+        # セッションクッキーを取得（認証未提供時は共通メッセージで 401）
         session_cookies = self._extract_session_cookies(request)
         if not session_cookies:
             return Response(
-                {"error": "Authentication required"},
+                {"detail": UNAUTHENTICATED_DETAIL},
                 status=status.HTTP_401_UNAUTHORIZED
             )
         
@@ -1120,8 +1166,8 @@ class TicketCreateAPIView(APIView):
         ticket_design_id = request.data.get('ticket_design_id')
         ticket_design_name = request.data.get('ticket_design_name')
         ticket_design_layout = request.data.get('ticket_design_layout') or request.data.get('layout')
-        template_image = request.FILES.get('template_image') or request.FILES.get('ticket_template_image')
-        checkin_reward_image = request.FILES.get('checkin_reward_image') or request.FILES.get('ticket_checkin_reward_image')
+        template_image = request.FILES.get('template_image')
+        checkin_reward_image = request.FILES.get('checkin_reward_image')
         
         # バリデーション
         if not event_name:

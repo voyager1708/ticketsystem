@@ -20,12 +20,8 @@ RUN apt-get update && \
         build-essential \
         pkg-config
 
-# lint
+# install build tooling
 RUN pip install --upgrade pip
-RUN pip install flake8==6.0.0
-COPY . /usr/src/app/
-## flake8を実行すると、エラーになるので後で修正する
-#RUN flake8 --ignore=E501,F401 .
 
 # install python dependencies
 COPY ./requirements.txt .
@@ -52,10 +48,6 @@ RUN chmod +x /entrypoint.sh
 # 変数の確認
 RUN echo "####### UID=${UID} GID=${GID} USERNAME=${USERNAME} NUM_WORKERS=${NUM_WORKERS}"
 
-# copy entrypoint.sh
-COPY ./entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
-
 # create directory for the app user
 RUN mkdir -p /home/app
 
@@ -77,7 +69,7 @@ WORKDIR $APP_HOME
 COPY --from=builder /usr/src/app/wheels /wheels
 COPY --from=builder /usr/src/app/requirements.txt .
 RUN pip install --upgrade pip
-RUN pip install --no-cache /wheels/*
+RUN pip install --no-cache-dir /wheels/*
 
 # copy project
 COPY . $APP_HOME

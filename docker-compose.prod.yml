@@ -1,0 +1,10 @@
+# 本番環境用 override。必ず bin/start-prod を使って起動すること。
+# docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+services:
+  ticket_web:
+    volumes:
+      - /mnt/extra/ticketsystem/app:/home/app/web
+      - /mnt/extra/ticketsystem/.env:/home/app/.env
+    environment:
+      - DEPLOY_ENV=production
+    restart: always

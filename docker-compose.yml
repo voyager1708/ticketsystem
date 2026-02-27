@@ -17,9 +17,8 @@ services:
       - "8001:8001"
     env_file:
       - ./.env
-    volumes:
-      - ./app:/home/app/web                 # ソースコード全体をマウント（開発用）
-      - ./.env:/home/app/.env               # 環境変数ファイルのマウント(DB初期化で書き換えるケースあり)
+    # volumes は意図的に未設定。単体起動を防ぐため、必ず bin/start-dev または bin/start-prod を使うこと。
+    # docker compose のみで起動するとアプリがマウントされず失敗する。
     networks:
       - betawallet-dev_default              # betawallet-dev のネットワークに参加して db に接続
     # DB は betawallet-dev の Docker db を使用。ticket_db は使わない。
