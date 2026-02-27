@@ -7,3 +7,4 @@ services:
       - ./.env:/home/app/.env
     environment:
       - DEPLOY_ENV=development
+      - DEBUG=True
