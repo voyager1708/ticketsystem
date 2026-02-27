@@ -1,6 +1,8 @@
 # ハンズオンPPT（20枚）案 + Colabセル対応表
 
-対象: `documents/010_colab_ai_notebook_steps.md`（セル1〜22）
+この資料は、`handson/v1-start` から `Goal` までの授業進行を、スライドとColabセルで同期させるためのマップです。
+
+対象: `documents/004_colab_execution_steps.md`（セル1〜22）
 
 ## 1) スライド⇔セル対応（一覧）
 
@@ -33,7 +35,7 @@
 
 使い方:
 - 下の「Slide XX」ブロックを **そのまま1枚ずつ** PPTのテキストとして貼り付け
-- `対応セル:` に従って `010_colab_ai_notebook_steps.md` の該当セルを実行
+- `対応セル:` に従って `004_colab_execution_steps.md` の該当セルを実行
 - 詳細手順（コマンド/コード）はColab側に置き、PPTは「目的・成功条件・控える値」中心
 
 ### Slide 01: 表紙
