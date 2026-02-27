@@ -57,6 +57,18 @@
 
 ---
 
+## OS 別の前提
+
+以降のコマンドは **Linux 環境のターミナル** を前提にしています。OS に応じて次のように準備してください。
+
+| OS | 準備 |
+|----|------|
+| **Windows** | **WSL2** で **Ubuntu 24.04** を使う。PowerShell で `wsl --install -d Ubuntu-24.04` を実行し、再起動後に Ubuntu を起動。以降は WSL の Ubuntu ターミナルで `git` / `docker` を実行する。 |
+| **macOS** | 標準のターミナル（または iTerm 等）でそのまま実行。Docker は [Docker Desktop for Mac](https://docs.docker.com/desktop/install/mac-install/) または `brew install docker` で導入。 |
+| **Linux** | そのままターミナルで実行。Docker は各ディストリのパッケージ（例: Ubuntu は `apt install docker.io docker-compose-plugin`）で導入。 |
+
+---
+
 ## 1. 最初にそろえるもの（全員）
 
 - Git
@@ -74,7 +86,7 @@ git checkout handson/v1-start
 
 ## 2. 推奨手順（Docker）
 
-迷ったらこの手順を選んでください。授業デモと同じ再現性で進められます。
+迷ったらこの手順を選んでください。
 
 ```bash
 docker compose -f docker-compose.dev.yml up -d --build
@@ -154,6 +166,6 @@ curl -fsS http://localhost:8000/healthz
 
 1. `documents/002_handson_plan.md`（全体像・タイムテーブル）
 2. `documents/003_goal_steps_ai_pairing.md`（Step 1 以降の実行順）
-3. `documents/004_colab_execution_steps.md`（Colabで実行する場合）
+3. `documents/010_colab_execution_steps.md`（Colabで実行する場合・今回は使用しない）
 
 `Goal` までの実装は、`v1-start` の状態を崩さず、各Stepでこまめに動作確認しながら進めるのが最短です。
