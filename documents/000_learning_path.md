@@ -11,8 +11,8 @@
 | # | 資料 | 内容 |
 |---|------|------|
 | 1 | `001_setup_v1_start.md` | 開発環境の起動。`GET /healthz = 200` と Swagger UI まで到達する |
-| 2 | `002_handson_plan.md` | 2時間の全体像・タイムテーブル・到達目標（Goal）の確認 |
-| 3 | `003_goal_steps_ai_pairing.md` | Step 1 以降の実行順。Cursor（AI）と一緒に必須3API を実装し、Swagger UI（`/api/docs/`）で検証する |
+| 2 | `010_handson_plan.md` | 2時間の全体像・タイムテーブル・到達目標（Goal）の確認 |
+| 3 | `011_goal_steps_ai_pairing.md` | Step 1 以降の実行順。Cursor（AI）と一緒に必須3API を実装し、Swagger UI（`/swagger/`）で検証する |
 
 ---
 
@@ -20,12 +20,12 @@
 
 | # | 資料 | こんなときに |
 |---|------|--------------|
-| 5 | `005_session_auth_reference.md` | 認証・セッション・Cookie で失敗したとき |
-| 6 | `006_swagger_auth_troubleshooting.md` | Swagger のログイン／ログアウトで失敗したとき |
-| 7 | `007_ticket_create_api_spec.md` | チケット作成APIの仕様を確認したいとき |
-| 8 | `008_architecture_reference.md` | 設計の背景や判断根拠を確認したいとき |
-| 9 | `009_slides_cell_map.md` | 授業スライドと手順の対応を確認したいとき |
-| — | `010_colab_execution_steps.md` | Colab で API を試す場合の手順（任意・今回は使用しない） |
+| 28 | `028_session_auth_reference.md` | 認証・セッション・Cookie で失敗したとき（裏の話） |
+| 20 | `020_swagger_auth_troubleshooting.md` | Swagger のログイン／ログアウトで失敗したとき |
+| 21 | `021_ticket_create_api_spec.md` | チケット作成APIの仕様を確認したいとき |
+| 22 | `022_architecture_reference.md` | 設計の背景や判断根拠を確認したいとき |
+| 23 | `023_slides_cell_map.md` | 授業スライドと手順の対応を確認したいとき |
+| — | `024_colab_execution_steps.md` | Colab で API を試す場合の手順（任意・今回は使用しない） |
 
 ---
 

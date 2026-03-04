@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 class BaseAPIClient:
     """
-    ベースAPI (betawallet-dev) を呼び出すクライアント
+    ベースAPIを呼び出すクライアント
     
     このクラスは、拡張APIからベースAPIのエンドポイントを
     HTTP経由で呼び出すためのラッパーです。

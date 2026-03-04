@@ -1,4 +1,25 @@
 from django.db import models
+from django.contrib.auth.hashers import make_password
+
+
+class Account(models.Model):
+    """
+    ローカル用アカウント。POST /api/accounts/create で作成（ベースAPI sign-up と同時に作成）。
+    """
+    username = models.CharField(max_length=150, unique=True)
+    password = models.CharField(max_length=128)  # hashed
+    email = models.EmailField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "ticket_system_account"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return self.username
+
+    def set_password(self, raw_password):
+        self.password = make_password(raw_password)
 
 
 class TicketDesign(models.Model):

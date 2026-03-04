@@ -13,8 +13,8 @@
 
 | Step | 機能 | エンドポイント | 成功の目安 |
 |------|------|----------------|------------|
-| 2 | アカウント作成 | `POST /accounts` | 必須項目チェック、201 / 400 の返し分け |
-| 3 | チケット生成 | `POST /tickets/templates` | 入力チェック、201 / 400、後続APIで利用可能 |
+| 2 | アカウント作成（サインアップ） | `POST /api/accounts/create` | ローカルにユーザー作成しつつベースAPIへ sign-up 転送。username / email / password / group（任意）。201 または 400。単なる転送のみは `POST /api/ext/v1/auth/sign-up` |
+| 3 | チケット生成 | `POST /tickets/create` | 入力チェック、201 / 400、後続APIで利用可能 |
 | 4 | チェックイン | `POST /tickets/{id}/checkin` | 未チェックイン→チェックイン済みの遷移、404 / 409 の扱い |
 
 ### 余力があれば（発展）
@@ -26,7 +26,7 @@
 
 ### Goal の判定
 
-- 上記必須3APIが Swagger UI（`/api/docs/`）から実行できる
+- 上記必須3APIが Swagger UI（`/swagger/`）から実行できる
 - 主要な異常系（少なくとも2パターン）を説明できる
 - 自分の実装内容（AI提案を含む）を説明できる
 
@@ -38,13 +38,13 @@
 |---|------|----------------|
 | **Step 0** | セットアップ完了確認 | ✅ 下記「この資料のゴール」で完了 |
 | Step 1 | APIの型を確認（URL → View → JSON、ステータス返し分け） | — |
-| Step 2 | 必須API 1本目：アカウント作成 | — |
+| Step 2 | 必須API 1本目：アカウント作成（sign-up） | — |
 | Step 3 | 必須API 2本目：チケット生成 | — |
 | Step 4 | 必須API 3本目：チェックイン | — |
 | Step 5 | 余力があれば：配布・報酬送付 | — |
 | **Goal** | 必須3APIがSwaggerで検証でき、異常系を説明できる | — |
 
-詳細な実行順は `documents/003_goal_steps_ai_pairing.md` に従ってください。
+詳細な実行順は `documents/011_goal_steps_ai_pairing.md` に従ってください。
 
 ---
 
@@ -52,8 +52,8 @@
 
 - ローカルでAPIサーバーを起動する
 - `GET /healthz` が `200` を返す
-- Swagger UI（`/api/docs/`）を開ける
-- 上記ができたら、`003_goal_steps_ai_pairing.md` の **Step 1** に進める
+- Swagger UI（`/swagger/`）を開ける
+- 上記ができたら、`011_goal_steps_ai_pairing.md` の **Step 1** に進める
 
 ---
 
@@ -88,6 +88,40 @@ git checkout handson/v1-start
 
 以下の手順で進んでください。
 
+### Docker が未インストールの場合（方法1: 公式リポジトリで入れる・推奨）
+
+`docker` コマンドが見つからない場合は、まず Docker をインストールします。**`docker compose`（Compose v2）** が使えるように、公式リポジトリから入れます。
+
+1. **公式リポジトリの追加とインストール**（WSL2 / Ubuntu 系）
+
+   ```bash
+   sudo apt update
+   sudo apt install -y ca-certificates curl gnupg
+   sudo install -m 0755 -d /etc/apt/keyrings
+   curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo tee /etc/apt/keyrings/docker.asc > /dev/null
+   sudo chmod a+r /etc/apt/keyrings/docker.asc
+   echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+   sudo apt update
+   sudo apt install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+   ```
+
+2. **Docker の起動**（WSL2 では自動起動しないことがあるため、ターミナルを開いたあとで実行）
+
+   ```bash
+   sudo service docker start
+   ```
+
+3. **インストール確認**
+
+   ```bash
+   docker --version
+   docker compose version
+   ```
+
+   両方表示されれば、このあとの「コンテナのビルド・起動」に進めます。
+
+---
+
 1. **`.env` の用意**  
    `.env` が無い場合は、プロジェクトルートで以下を実行する。
    ```bash
@@ -98,24 +132,22 @@ git checkout handson/v1-start
 2. **コンテナのビルド・起動**  
    `docker-compose.dev.yml` は上書き用のため、**必ずベースの `docker-compose.yml` と合わせて**指定する。
    ```bash
-   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+   sudo docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
    ```
 
-3. **動作確認**
+3. **動作確認**（このリポジトリの Docker はポート **8001** で待ち受けます）
    ```bash
-   curl -fsS http://localhost:8000/healthz
+   curl -fsS http://localhost:8001/healthz
    ```
 
-※docker は最初は入っていないので、エラーになります。
-※エージェントにエラー内容を伝えてdockerのインストールの指示をだしてみましょう。
-※インストールができたら再度起動を試します。
+※ `docker` が未インストールの場合は、上記「Docker が未インストールの場合（方法1: 公式リポジトリで入れる）」の手順でインストールしてから、再度コンテナのビルド・起動を試してください。
 
 ### 成功条件（Step 0）
 
 - `curl` の結果が `200` 系レスポンス
-- ブラウザで `http://localhost:8000/api/docs/` を開ける
+- ブラウザで `http://localhost:8001/swagger/` を開ける
 
-### 終了時
+### 終了方法
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.dev.yml down
@@ -145,19 +177,18 @@ curl -fsS http://localhost:8000/healthz
 ### 成功条件（Step 0）
 
 - `GET /healthz` が `200`
-- `http://localhost:8000/api/docs/` で Swagger UI を開ける
-- その後、`documents/003_goal_steps_ai_pairing.md` の Step 1 に進める
+- `http://localhost:8000/swagger/` で Swagger UI を開ける
+- その後、`documents/011_goal_steps_ai_pairing.md` の Step 1 に進める
 
 ---
 
 ## 4. AIと一緒に進めるテンプレ
 
-詰まったら、以下の4点をAIに渡して相談してください。
+詰まったら、以下をAIに渡して相談してください。
 
 1. 実行したコマンド
 2. 期待した結果
 3. 実際の結果（エラーメッセージ全文）
-4. いまのブランチ名（`handson/v1-start`）
 
 プロンプト例:
 
@@ -173,7 +204,7 @@ curl -fsS http://localhost:8000/healthz
 ## 5. よくある詰まりと対処
 
 - Dockerが起動しない: Dockerアプリ再起動 → もう一度 `up -d --build`
-- ポート`8000`競合: 既存プロセスを停止して再実行
+- ポート `8001`（Docker）競合: 既存のコンテナやプロセスを停止して再実行（非Docker の場合は `8000`）
 - `pip install`失敗: 仮想環境を作り直して再実行
 - パス混在: 必ずリポジトリ配下でコマンド実行
 
@@ -181,8 +212,7 @@ curl -fsS http://localhost:8000/healthz
 
 ## 6. この後に読む順番
 
-1. `documents/002_handson_plan.md`（全体像・タイムテーブル）
-2. `documents/003_goal_steps_ai_pairing.md`（Step 1 以降の実行順）
-3. `documents/010_colab_execution_steps.md`（Colabで実行する場合・今回は使用しない）
+1. `documents/010_handson_plan.md`（全体像・タイムテーブル）
+2. `documents/011_goal_steps_ai_pairing.md`（Step 1 以降の実行順）
 
 `Goal` までの実装は、`v1-start` の状態を崩さず、各Stepでこまめに動作確認しながら進めるのが最短です。

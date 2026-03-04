@@ -36,7 +36,7 @@ services:
   #  volumes:
   #    - /etc/letsencrypt:/etc/letsencrypt:ro
   #    - ./app/static:/static:ro
-  #    - /mnt/extra/betawallet-dev/app/static:/static_base:ro
+  #    - /mnt/extra/<ベースAPI>/app/static:/static_base:ro
   #    - ./nginx/nginx.conf:/etc/nginx/conf.d/nginx.conf:ro  # Nginx設定をボリュームマウント
 
   # ticket_db:

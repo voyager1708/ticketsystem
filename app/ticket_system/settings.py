@@ -87,8 +87,8 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
-    'ticket_service',  # Must be before drf_yasg to override templates
-    'drf_yasg',
+    'ticket_service',
+    'drf_spectacular',
 ]
 
 MIDDLEWARE = [
@@ -200,14 +200,17 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
     ],
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }
 
-# Swagger settings (public docs)
-SWAGGER_SETTINGS = {
-    'SECURITY_DEFINITIONS': {},
-    'LOGOUT_URL': '/accounts/logout/',
-    'USE_SESSION_AUTH': True,  # Enable session authentication button in Swagger UI
-    'USE_COMPAT_RENDERERS': False,  # Silence drf-yasg DeprecationWarning (new format without '.' prefix)
+# OpenAPI (drf-spectacular) settings
+# SERVERS を明示して Swagger UI の「Try it out」が同じオリジンへ送るようにする（Failed to fetch 対策）
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'Ticket Extension API',
+    'DESCRIPTION': 'API for ticket image generation and check-in.',
+    'VERSION': 'v1',
+    'SERVE_INCLUDE_SCHEMA': False,
+    'SERVERS': [{'url': 'http://localhost:8001', 'description': 'Local (Docker)'}],
 }
 
 # Login URL for Swagger UI (used by apiLogin() function)
@@ -223,10 +226,13 @@ SESSION_COOKIE_DOMAIN = os.environ.get('SESSION_COOKIE_DOMAIN', None)  # .buxbit
 SESSION_SAVE_EVERY_REQUEST = True
 SESSION_ENGINE = 'django.contrib.sessions.backends.db'
 
-# Base API URL (betawallet-dev)
+# Base API URL
 # .envファイルに以下を追加:
 # BASE_API_URL=http://localhost:8000
 BASE_API_URL = _get_env('BASE_API_URL', 'http://localhost:8000')
+# ベースAPIが自己署名証明書の場合は False にする（例: BASE_API_VERIFY_SSL=0）
+_base_verify = os.environ.get('BASE_API_VERIFY_SSL', 'True').lower()
+BASE_API_VERIFY_SSL = _base_verify in ('1', 'true', 'yes')
 
 # CSRF settings
 _CSRF_TRUSTED = os.environ.get(

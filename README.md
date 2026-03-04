@@ -4,7 +4,7 @@
 
 ## 概要
 
-- **ベースAPI**: betawallet-dev（変更なし）
+- **ベースAPI**: 変更なし
 - **拡張API**: ticket_system（このプロジェクト）
 - **認証**: セッション認証（ベースAPIと共有）
 - **データベース**: PostgreSQL
@@ -66,7 +66,7 @@ cp .env.example .env
 主な設定項目:
 - `SECRET_KEY`: Djangoのシークレットキー
 - `SQL_*`: PostgreSQLの接続情報
-- `BASE_API_URL`: ベースAPI（betawallet-dev）のURL
+- `BASE_API_URL`: ベースAPIのURL
 - `HOST_UID`, `HOST_GID`: コンテナ内のユーザーID/GID
 
 ### 2. Docker Composeで起動
@@ -92,9 +92,9 @@ docker compose exec ticket_web python manage.py createsuperuser
 ### Swagger / API仕様
 
 ```
-GET /swagger/
-GET /redoc/
-GET /swagger.json
+GET /swagger/      # Swagger UI
+GET /redoc/       # ReDoc
+GET /api/schema/  # OpenAPI 3 スキーマ (YAML/JSON)
 ```
 
 ### チケット画像生成
@@ -167,6 +167,17 @@ python app/manage.py runserver 8001
 
 Ansible経由で準備する場合は `tools/install_django.yml` が `.venv` を作成し、
 `app/requirements.txt` をインストールします。
+
+### WSL の Ubuntu でデバッグ（Windows）
+
+Cursor / VS Code で WSL に接続し、ブレークポイントでデバッグする手順は  
+**`documents/012_wsl_debug.md`** を参照してください。
+
+### WSL 内で Docker 起動と BASE_API_URL 疎通確認
+
+WSL で Docker を起動し、`BASE_API_URL` への疎通まで確認する手順は  
+**`documents/013_wsl_docker_api_check.md`** を参照してください。  
+疎通確認には `python manage.py check_base_api`（オプション: `--insecure`）を使用します。
 
 ## 注意事項
 

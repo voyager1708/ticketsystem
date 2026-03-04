@@ -12,7 +12,7 @@ cd "$ROOT"
 if [[ "${ROOT}" == *"ticketsystem-dev"* ]] || [[ "${ROOT}" == *"ticketsystem-start"* ]]; then
   : # DEV project
 elif [[ "${ROOT}" == *"ticketsystem"* ]]; then
-  echo "Current project is PROD (ticketsystem). Use stop-prod or run from ticketsystem-dev for DEV." >&2
+  echo "Current project is PROD (ticketsystem). Use restart-prod or run from ticketsystem-dev for DEV." >&2
   exit 1
 fi
-exec docker compose -f docker-compose.yml -f docker-compose.dev.yml down "$@"
+exec docker compose -f docker-compose.yml -f docker-compose.dev.yml restart "$@"

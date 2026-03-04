@@ -1,5 +1,11 @@
 from django.contrib import admin
-from ticket_service.models import TicketDesign
+from ticket_service.models import Account, TicketDesign
+
+
+@admin.register(Account)
+class AccountAdmin(admin.ModelAdmin):
+    list_display = ("id", "username", "email", "created_at")
+    search_fields = ("username", "email")
 
 
 @admin.register(TicketDesign)

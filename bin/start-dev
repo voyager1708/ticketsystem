@@ -9,7 +9,7 @@ if [[ "${CALLED_FROM}" == "${SCRIPT_DIR}" ]]; then
   exit 1
 fi
 cd "$ROOT"
-if [[ "${ROOT}" == *"ticketsystem-dev"* ]]; then
+if [[ "${ROOT}" == *"ticketsystem-dev"* ]] || [[ "${ROOT}" == *"ticketsystem-start"* ]]; then
   : # DEV project
 elif [[ "${ROOT}" == *"ticketsystem"* ]]; then
   echo "Current project is PROD (ticketsystem). Use start-prod or run from ticketsystem-dev for DEV." >&2
