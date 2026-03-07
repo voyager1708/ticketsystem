@@ -38,7 +38,7 @@
 
 | 変数名 | 説明 | 例 |
 |--------|------|-----|
-| `BASE_API_URL` | ベースAPI のベース URL（末尾スラッシュなし） | `https://api.example.com` または `http://localhost:8000` |
+| `BASE_API_URL` | ベースAPI のベース URL（末尾スラッシュなし） | `.env参照` |
 
 - 未設定だと `BaseAPIClient` 初期化時にエラーになる
 - 接続確認: `python manage.py check_base_api`（`--insecure` で SSL エラーを無視可能）
@@ -100,7 +100,7 @@
 
 | パラメータ | 型 | 必須 | 説明 |
 |-----------|-----|------|------|
-| file | File | Yes | NFT 用画像（例: チケット PNG） |
+| file | File | Yes | NFT 用ファイル（拡張子付きであれば画像・HTML 等いずれも可） |
 | app | string | Yes | アプリ名（例: "Ticket System"） |
 | name | string | Yes | NFT 名 |
 | additional_info | string | No | JSON 文字列のメタデータ（subTypeData 等に格納） |

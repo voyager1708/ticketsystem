@@ -1,6 +1,6 @@
 # Step 1: 導入・ゴール確認（10分）
 
-全体計画は `010_handson_plan.md` を参照。
+実行ステップは `011_goal_steps_ai_pairing.md` および各 `010_StepN_*.md` を参照。
 
 - 本日の 5 API の全体像を確認
   1) アカウント作成  

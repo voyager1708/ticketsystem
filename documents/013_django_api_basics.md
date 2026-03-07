@@ -1,6 +1,6 @@
 # Step 3: Django APIの型を学ぶ（15分）
 
-全体計画は `010_handson_plan.md` を参照。
+実行ステップは `011_goal_steps_ai_pairing.md` および各 `010_StepN_*.md` を参照。
 
 - URLルーティングの基本
 

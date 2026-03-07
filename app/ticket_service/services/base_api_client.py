@@ -89,7 +89,33 @@ class BaseAPIClient:
             print(f"get_nft: Unexpected error: {e}, response text: {response.text[:200] if response else 'No response'}", flush=True)
             logger.error(f"Failed to fetch NFT {nft_origin}: {e}")
             return None
-    
+
+    def get_nft_raw(
+        self,
+        nft_origin: str,
+        session_cookies: Dict[str, str],
+    ) -> Optional[bytes]:
+        """
+        NFT の生バイト（インスクリプション全体＝envelope＋body）を取得。
+        data_format を付けないのでバイナリで返る。
+        """
+        url = f"{self.base_url}/api/v1/nft/data/{nft_origin}"
+        headers = self._get_headers()
+        session = requests.Session()
+        cookie_domain = self._get_cookie_domain()
+        for cookie_name, cookie_value in session_cookies.items():
+            if cookie_domain:
+                session.cookies.set(cookie_name, cookie_value, domain=cookie_domain)
+            else:
+                session.cookies.set(cookie_name, cookie_value)
+        try:
+            response = session.get(url, headers=headers, timeout=15)
+            response.raise_for_status()
+            return response.content
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to fetch NFT raw {nft_origin}: {e}")
+            return None
+
     def _get_cookie_domain(self) -> str:
         """クッキーのドメインを取得（設定から、またはデフォルト）"""
         from django.conf import settings
@@ -417,8 +443,8 @@ class BaseAPIClient:
         POST /api/v1/nft/create
         
         Args:
-            image_file: チケット画像のバイトデータ
-            image_filename: 画像ファイル名
+            image_file: NFT アセットのバイトデータ（HTML または画像）
+            image_filename: ファイル名（拡張子で Content-Type を判定。例: ticket.html, ticket.png）
             nft_name: NFT名（例: "Summer Festival 2026 Ticket"）
             metadata: NFTメタデータ（additional_infoに格納）
             session_cookies: セッションクッキーの辞書
@@ -458,8 +484,10 @@ class BaseAPIClient:
         # Refererヘッダーを追加（CSRF対策のため必要）
         headers['Referer'] = self.base_url + '/'
         
+        # 拡張子で Content-Type を判定（HTML または画像）
+        content_type = 'text/html' if (image_filename or '').lower().endswith('.html') else 'image/png'
         files = {
-            'file': (image_filename, image_file, 'image/png')
+            'file': (image_filename, image_file, content_type)
         }
         data = {
             'app': 'Ticket System',

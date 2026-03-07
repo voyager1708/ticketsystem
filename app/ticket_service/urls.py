@@ -5,6 +5,9 @@ from ticket_service.views import (
     AuthLogoutProxyAPIView,
     AuthSignUpProxyAPIView,
     AuthUserProxyAPIView,
+    TicketCreateAPIView,
+    TicketHtmlAPIView,
+    TicketImageAPIView,
 )
 
 urlpatterns = [
@@ -32,6 +35,21 @@ urlpatterns = [
         'ext/v1/auth/user',
         AuthUserProxyAPIView.as_view(),
         name='ext-auth-user'
+    ),
+    path(
+        'ext/v1/ticket/create',
+        TicketCreateAPIView.as_view(),
+        name='ext-ticket-create'
+    ),
+    path(
+        'ext/v1/ticket/image/<str:nft_origin>',
+        TicketImageAPIView.as_view(),
+        name='ext-ticket-image'
+    ),
+    path(
+        'ext/v1/ticket/html/<str:nft_origin>',
+        TicketHtmlAPIView.as_view(),
+        name='ext-ticket-html'
     ),
 ]
 

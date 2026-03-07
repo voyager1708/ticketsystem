@@ -36,9 +36,9 @@ AI相談テンプレ:
 `ticket_system`に新しいAPI `POST /api/ext/v1/ticket/create` を追加し、チケットNFTの作成を簡素化する。
 
 このAPIは以下の処理を自動化する：
-1. チケット画像の生成（QRコード付き）
-2. NFTメタデータの構築
-3. ベースAPI経由でのNFT作成
+1. チケット用 HTML の生成（背景・座席・日時・場所（住所）をインライン画像・テキストでレイアウト。**QR は含めない**）
+2. NFT メタデータの構築（座席・日付・場所（住所）等は JSON で保持）
+3. ベースAPI経由での NFT 作成（**アセットは HTML ファイル**。表示時に QR をレンダリングして返す）
 
 ---
 
@@ -54,11 +54,11 @@ sequenceDiagram
     Client->>TicketSystem: POST /api/ext/v1/ticket/create
     Note right of Client: event_name, event_date,<br/>recipient_paymail,<br/>ticket_design_id (optional)
     
-    TicketSystem->>TicketService: generate_ticket_image()
-    TicketService-->>TicketSystem: PNG bytes
+    TicketSystem->>TicketService: render_ticket_html (QR なし)
+    TicketService-->>TicketSystem: HTML bytes
     
     TicketSystem->>BaseAPI: POST /api/v1/nft/create
-    Note right of TicketSystem: file=ticket.png,<br/>additional_info=metadata,<br/>recipient_paymail
+    Note right of TicketSystem: file=ticket.html,<br/>additional_info=metadata,<br/>recipient_paymail
     
     BaseAPI-->>TicketSystem: NFT created response
     TicketSystem-->>Client: ticket_nft response
@@ -72,7 +72,7 @@ sequenceDiagram
 
 | パラメータ | 型 | 必須 | 説明 |
 |-----------|-----|------|------|
-| `file` | File | Yes | NFTファイル（画像等） |
+| `file` | File | Yes | NFT 用ファイル（拡張子付きであれば画像・HTML 等いずれも可） |
 | `app` | string | Yes | アプリ名 |
 | `name` | string | Yes | NFT名 |
 | `additional_info` | string | No | JSON形式の追加メタデータ（subTypeDataに格納） |
@@ -84,91 +84,39 @@ sequenceDiagram
 |-----------|-----|------|------|
 | `event_name` | string | Yes | イベント名 |
 | `event_date` | string | Yes | イベント日時（ISO 8601形式推奨） |
-| `venue` | string | No | 会場名 |
+| `ticket_html` | file | Yes | チケット用HTML（スタイル含む） |
+| `venue` | string | No | 会場名・場所（住所） |
 | `seat` | string | No | 座席情報 |
 | `recipient_paymail` | string | No | 受領者paymail（省略時は自分） |
-| `ticket_design_id` | integer | No | 使用するTicketDesignのID |
-| `ticket_design_name` | string | No | TicketDesignの名称（新規作成時のみ） |
-| `ticket_design_layout` | string | No | TicketDesignのlayout（JSON文字列） |
-| `template_image` | file | No | 背景画像（PNG/JPG） |
-| `checkin_reward_image` | file | No | チェックイン報酬NFT用画像 |
 
 ---
 
-## 4. デザインテンプレート指定
+## 4. チケットHTML（TicketDesign は使わない）
 
-### 4.1 指定方法
+アップロードする HTML にスタイルが含まれるため、**TicketDesign は使わない**。`ticket_html` で渡した HTML をそのままベースに、API で受け取ったデータだけを埋め込む。
 
-`ticket_design_id` パラメータでデザインテンプレートを指定できる。
+### 4.1 必須: ticket_html
 
-```json
-// 例1: 特定のデザインを指定
-{
-  "event_name": "Summer Festival 2026",
-  "event_date": "2026-08-15T18:00:00+09:00",
-  "recipient_paymail": "user@example.com",
-  "ticket_design_id": 2
-}
+- **ticket_html**: チケット用の HTML ファイル（必須）。CSS やインライン画像（base64）などスタイルをすべてこの HTML に含める。
+- サーバ側では `{{ event_name }}`, `{{ event_date }}`, `{{ venue }}`, `{{ seat }}`, `{{ holder_paymail }}`, `{{ nft_metadata_json }}` のプレースホルダを置換し、`{{ background_block }}`, `{{ qr_block }}` は空で置換する。
 
-// 例2: デザインを省略（アクティブなデザインを自動使用）
-{
-  "event_name": "Summer Festival 2026",
-  "event_date": "2026-08-15T18:00:00+09:00",
-  "recipient_paymail": "user@example.com"
-}
-```
+### 4.2 HTML テンプレートのプレースホルダ
 
-### 4.2 処理ロジック
+- **テキスト**: `{{ event_name }}`, `{{ event_date }}`, `{{ venue }}`, `{{ seat }}`, `{{ holder_paymail }}` を API の値で置換。
+- **JSON**: `{{ nft_metadata_json }}` に MAP 形式のメタデータ（JSON 文字列）を埋め込む。
+- **背景・QR**: `{{ background_block }}`, `{{ qr_block }}` は空文字。アップロード HTML 側で背景を用意する場合はそのまま記述し、プレースホルダがなければそのままでよい。
 
-```python
-ticket_design_id = request.data.get('ticket_design_id')
+### 4.3 表示用 PNG について
 
-if ticket_design_id:
-    # 指定されたIDのデザインを取得
-    design = TicketDesign.objects.filter(id=ticket_design_id).first()
-    if not design:
-        return Response({"error": f"TicketDesign id={ticket_design_id} not found"}, status=400)
-else:
-    # アクティブなデザインを自動取得（なければNone）
-    design = TicketDesign.get_active()
-```
+QR 付きの表示用画像は **表示時**（`GET /api/ext/v1/ticket/image/{nft_origin}`）に、メタデータ ＋ TicketDesign（背景・layout）＋ QR を PIL で描画して返す。チケット作成時の NFT アセット（HTML）には TicketDesign は使わない。
 
-### 4.3 ticket_design_id未指定時の選択ルール
+### 4.4 WOC でチケット HTML を確認する
 
-`ticket_design_id` を指定しない場合の挙動は以下のとおり：
+オンチェーン上の NFT データは **Ordinals のインスクリプション形式**（envelope: `ord` + content-type + body）で格納される。そのため生バイトの先頭には識別子や MIME タイプ（`text/html` など）のヘッダーが付き、その後に HTML 本体が続く。
 
-1. `ticket_design_name` / `ticket_design_layout` / `template_image` / `checkin_reward_image` のいずれかが指定されている場合  
-   → **新規 `TicketDesign` を作成して使用**
-2. 上記がすべて未指定の場合  
-   → **アクティブな `TicketDesign` を使用**
-3. アクティブなデザインが存在しない場合  
-   → **デフォルト背景でチケット画像を生成**
-
-### 4.4 デザインがない場合
-
-デザインが存在しない場合でも、デフォルトの背景（800x400px、ダークグレー）でチケット画像を生成可能。
-
-### 4.5 背景画像・レイアウト・報酬NFT画像の登録
-
-`multipart/form-data` で以下を送ると、チケット作成と同時にデザイン情報を登録できる。
-
-#### 新規デザインを作成する場合
-
-- `ticket_design_name` を指定すると新規 `TicketDesign` を作成する
-- `template_image` がチケット背景画像
-- `checkin_reward_image` がチェックイン報酬NFTの画像
-
-#### 既存デザインを更新する場合
-
-- `ticket_design_id` を指定すると既存 `TicketDesign` を更新する
-- 画像やレイアウトは指定された項目のみ上書きされる
-
-#### 画像パラメータ
-
-| パラメータ | 説明 |
-|-----------|------|
-| `template_image` | チケット背景画像（PNG/JPG） |
-| `checkin_reward_image` | チェックイン報酬NFTの画像 |
+**素の HTML だけを見たい場合**:
+- **拡張API**: `GET /api/ext/v1/ticket/html/{nft_origin}` で、envelope を除いた HTML のみを取得できる。ログイン済みで取得し、ファイルとして保存してブラウザで開くと文字化けせず表示される。
+- **WOC**: WOC のデコード機能で、content-type が `text/html` のインスクリプションから本文（body）だけを取り出して表示できる。
 
 ---
 

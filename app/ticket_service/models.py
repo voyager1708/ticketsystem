@@ -28,13 +28,15 @@ class TicketDesign(models.Model):
 
     Stored in MEDIA:
     - template_image: background PNG/JPG
-    - layout: JSON config controlling positions/sizes for QR + text
+    - layout: JSON config controlling positions/sizes for QR + text (fallback when layout_html is empty)
+    - layout_html: HTML fragment for ticket layout (placeholders: event_name, event_date, venue, seat, holder_paymail, background_block, qr_block, nft_metadata_json)
     - checkin_reward_image: image to be sent as NFT reward after check-in
     """
 
     name = models.CharField(max_length=100, default="Default", help_text="Design name for identification")
     template_image = models.ImageField(upload_to="ticket_templates/", null=True, blank=True)
     layout = models.JSONField(default=dict, blank=True)
+    layout_html = models.TextField(null=True, blank=True, help_text="HTML template for ticket layout (placeholders: {{ event_name }}, {{ event_date }}, {{ venue }}, {{ seat }}, {{ holder_paymail }}, {{ background_block }}, {{ qr_block }}, {{ nft_metadata_json }})")
     checkin_reward_image = models.ImageField(
         upload_to="ticket_templates/checkin_rewards/",
         null=True,

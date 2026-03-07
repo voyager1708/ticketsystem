@@ -11,7 +11,7 @@
 | # | 資料 | 内容 |
 |---|------|------|
 | 1 | `001_setup_v1_start.md` | 開発環境の起動。`GET /healthz = 200` と Swagger UI まで到達する |
-| 2 | `010_handson_plan.md` | 2時間の全体像・タイムテーブル・到達目標（Goal）の確認 |
+| 2 | `011_goal_steps_ai_pairing.md` と `010_Step0_Setup.md` 以降 | 実行ステップ目次・到達目標（Goal）・各 Step の詳細 |
 | 3 | `011_goal_steps_ai_pairing.md` | Step 1 以降の実行順。Cursor（AI）と一緒に必須3API を実装し、Swagger UI（`/swagger/`）で検証する |
 
 ---

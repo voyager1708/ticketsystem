@@ -122,6 +122,26 @@ git checkout handson/v1-start
 
 ---
 
+0. **Docker の起動**（WSL2 などでは自動起動しないため、コンテナを動かす前に実行する）
+   ```bash
+   sudo service docker start
+   ```
+
+   ```text
+   APIが利用可能かを確認します。
+   ```
+
+   ```bash
+   sudo docker compose -f docker-compose.yml -f docker-compose.dev.yml exec ticket_web python manage.py check_base_api --insecure
+   BASE_API_URL = https://bsvapi01.cds.tohoku.ac.jp
+   SSL verification: OFF (--insecure)
+   ```
+
+   ```text
+   GET https://bsvapi01.cds.tohoku.ac.jp  ->  200
+   ```
+
+
 1. **`.env` の用意**  
    `.env` が無い場合は、プロジェクトルートで以下を実行する。
    ```bash
@@ -147,13 +167,6 @@ git checkout handson/v1-start
 - `curl` の結果が `200` 系レスポンス
 - ブラウザで `http://localhost:8001/swagger/` を開ける
 
-### 終了方法
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml down
-```
-
----
 
 ## 3. 代替手順（非Docker）
 
@@ -212,7 +225,5 @@ curl -fsS http://localhost:8000/healthz
 
 ## 6. この後に読む順番
 
-1. `documents/010_handson_plan.md`（全体像・タイムテーブル）
-2. `documents/011_goal_steps_ai_pairing.md`（Step 1 以降の実行順）
+1. `documents/011_goal_steps_ai_pairing.md`（実行ステップ目次）。各 Step の詳細は `010_Step0_Setup.md` 〜 `010_Step4_Reward.md` を順に参照。
 
-`Goal` までの実装は、`v1-start` の状態を崩さず、各Stepでこまめに動作確認しながら進めるのが最短です。
