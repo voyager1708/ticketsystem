@@ -22,6 +22,18 @@ echo "DEPLOY_ENV=[${DEPLOY_ENV}]"
 echo "Starting the server UID:[${MYUID}],GID[${MYGID}],USERNAME:[${MYUSERNAME}] with [${WORKERS}] workers, timeout:[${TIMEOUT}]s ..."
 echo "Starting the server HOST_UID:[${HOST_UID}],HOST_GID[${HOST_GID}],HOST_USERNAME:[${HOST_USERNAME}] with [${NUM_WORKERS}] workers ..."
 
+# 開発時: マウントされた venv が空なら作成し、依存をインストール（イメージ再ビルド不要）
+if [ "${DEPLOY_ENV}" = "development" ] && [ ! -x /home/app/venv/bin/python ]; then
+  echo "Creating venv at /home/app/venv and installing dependencies..."
+  python3 -m venv /home/app/venv
+  /home/app/venv/bin/pip install --upgrade pip
+  /home/app/venv/bin/pip install -r /home/app/web/requirements.txt
+  echo "venv ready."
+fi
+if [ -x /home/app/venv/bin/python ]; then
+  export PATH="/home/app/venv/bin:$PATH"
+fi
+
 # マイグレーションを実行
 echo "Running migrations..."
 python manage.py migrate --noinput

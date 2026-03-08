@@ -1,5 +1,7 @@
 import base64
 import json
+import logging
+import re
 from dataclasses import dataclass
 from datetime import timezone
 from io import BytesIO
@@ -16,6 +18,8 @@ from ticket_service.models import TicketDesign
 DEFAULT_TOKEN_MAX_AGE_SECONDS = 60 * 60 * 24  # 24h
 DEFAULT_SIGNING_SALT = "hd_wallet.ticket.checkin"
 
+logger = logging.getLogger(__name__)
+
 
 def strip_ordinals_envelope(raw_bytes: bytes) -> bytes:
     """
@@ -31,6 +35,68 @@ def strip_ordinals_envelope(raw_bytes: bytes) -> bytes:
         if idx != -1:
             return raw_bytes[idx:]
     return raw_bytes
+
+
+def _html_to_png_with_playwright(
+    html_bytes: bytes, viewport_width: int = 800, viewport_height: int = 450
+) -> Tuple[Optional[bytes], Optional[str]]:
+    """
+    HTML をヘッドレスブラウザでレンダリングし PNG バイト列で返す。
+    成功時 (png_bytes, None)、失敗時 (None, error_message)。
+    """
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError as e:
+        logger.debug("playwright not installed, cannot render HTML to PNG: %s", e)
+        return (None, "Playwright not installed")
+    try:
+        html_str = html_bytes.decode("utf-8", errors="replace")
+    except Exception as e:
+        return (None, str(e))
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                headless=True,
+                args=[
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-gpu",
+                ],
+            )
+            page = browser.new_page()
+            page.set_viewport_size({"width": viewport_width, "height": viewport_height})
+            page.set_content(html_str, wait_until="commit")
+            png_bytes = page.screenshot(type="png")
+            browser.close()
+        return (png_bytes, None)
+    except Exception as e:
+        logger.warning("Playwright HTML to PNG failed: %s", e, exc_info=True)
+        return (None, str(e))
+
+
+def extract_background_image_from_html(html_bytes: bytes) -> Optional[bytes]:
+    """
+    HTML 内の最初の data URL 画像（data:image/...;base64,...）を抽出してバイト列で返す。
+    チケット背景としてそのまま使う。
+    """
+    try:
+        html = html_bytes.decode("utf-8", errors="replace")
+    except Exception:
+        return None
+    # src="data:image/jpeg;base64,..." または data:image/png;base64,...
+    m = re.search(
+        r'src=["\']data:image/(?:jpeg|jpg|png|gif|webp);base64,([A-Za-z0-9+/=]+)["\']',
+        html,
+        re.IGNORECASE,
+    )
+    if not m:
+        return None
+    try:
+        return base64.b64decode(m.group(1))
+    except Exception:
+        return None
+
 
 @dataclass(frozen=True)
 class TicketPayload:
@@ -83,9 +149,12 @@ class TicketService:
         Returns:
             TicketPayloadオブジェクト
         """
-        map_meta = metadata.get("MAP", {}) if isinstance(metadata.get("MAP"), dict) else {}
+        # ベースAPIは "map" または "MAP" で返す場合がある
+        map_meta = metadata.get("MAP") or metadata.get("map")
+        if not isinstance(map_meta, dict):
+            map_meta = {}
         candidate = map_meta.get("subTypeData")
-        
+
         if isinstance(candidate, str):
             try:
                 candidate = json.loads(candidate)
@@ -96,7 +165,17 @@ class TicketService:
         if isinstance(candidate, dict):
             inner = candidate.get("ticket")
             ticket = inner if isinstance(inner, dict) else candidate
-        
+        if not ticket and isinstance(metadata, dict):
+            direct = metadata.get("ticket") or metadata.get("subTypeData")
+            if isinstance(direct, dict):
+                ticket = direct
+            elif isinstance(direct, str):
+                try:
+                    parsed = json.loads(direct)
+                    ticket = parsed.get("ticket", parsed) if isinstance(parsed, dict) else {}
+                except Exception:
+                    pass
+
         return TicketPayload(
             ticket_id=str(ticket.get("ticket_id", "") or ""),
             event_title=str(ticket.get("event_title", "") or ticket.get("event_name", "") or ""),
@@ -105,27 +184,159 @@ class TicketService:
             seat=str(ticket.get("seat", "") or ""),
             holder_name=str(ticket.get("holder_name", "") or ticket.get("holder_paymail", "") or ""),
         )
-    
+
+    def extract_ticket_payload_from_html(self, html_bytes: bytes) -> Optional[TicketPayload]:
+        """
+        NFTのHTML本体からチケット情報を抽出。script#nft-metadata の JSON を優先し、
+        無ければ .ticket-info 内の h1 と .row .label/.value から取得する。
+        """
+        try:
+            html = html_bytes.decode("utf-8", errors="replace")
+        except Exception:
+            return None
+        # 1) script#nft-metadata の JSON から取得
+        script_match = re.search(
+            r'<script[^>]*\sid=["\']nft-metadata["\'][^>]*type=["\']application/json["\'][^>]*>([\s\S]*?)</script>',
+            html,
+            re.IGNORECASE,
+        )
+        if script_match:
+            try:
+                data = json.loads(script_match.group(1).strip())
+                meta = data.get("map") or data.get("MAP") or {}
+                sub = meta.get("subTypeData")
+                if isinstance(sub, str):
+                    sub = json.loads(sub) if sub else {}
+                ticket_dict = sub.get("ticket") if isinstance(sub, dict) else sub
+                if isinstance(ticket_dict, dict):
+                    return self.extract_ticket_payload_from_metadata({"map": {"subTypeData": {"ticket": ticket_dict}}})
+            except Exception:
+                pass
+        # 2) 表示用 HTML から取得（.ticket-info 内の h1, 日時・会場・座席・所有者）
+        event_title = ""
+        h1_match = re.search(r'<h1[^>]*>([^<]*)</h1>', html)
+        if h1_match:
+            event_title = h1_match.group(1).strip()
+        labels = {"日時": "event_datetime", "会場": "venue", "座席": "seat", "所有者": "holder_name", "発行日": "created_at"}
+        values = {"event_datetime": "", "venue": "", "seat": "", "holder_name": "", "created_at": ""}
+        for label_text, key in labels.items():
+            # <span class="label">日時</span> ... <span class="value">...</span>
+            pat = (
+                r'<span[^>]*class=["\']label["\'][^>]*>'
+                + re.escape(label_text)
+                + r'</span>\s*<span[^>]*class=["\']value["\'][^>]*>([^<]*)</span>'
+            )
+            m = re.search(pat, html)
+            if m:
+                values[key] = m.group(1).strip()
+        payload = TicketPayload(
+            ticket_id="",
+            event_title=event_title,
+            event_datetime=values["event_datetime"],
+            venue=values["venue"],
+            seat=values["seat"],
+            holder_name=values["holder_name"],
+        )
+        if event_title or values["event_datetime"] or values["venue"] or values["seat"] or values["holder_name"]:
+            return payload
+        return None
+
+    def metadata_from_payload(self, payload: TicketPayload) -> Dict[str, Any]:
+        """TicketPayload を render_ticket_png_from_metadata が受け取るメタデータ辞書に変換する。"""
+        return {
+            "map": {
+                "subTypeData": {
+                    "ticket": {
+                        "event_name": payload.event_title,
+                        "event_date": payload.event_datetime,
+                        "venue": payload.venue,
+                        "seat": payload.seat,
+                        "holder_paymail": payload.holder_name,
+                        "ticket_id": payload.ticket_id,
+                    }
+                }
+            }
+        }
+
+    def render_html_to_png_then_add_qr(
+        self,
+        html_bytes: bytes,
+        checkin_url: str,
+        viewport_width: int = 800,
+        viewport_height: int = 450,
+        qr_size: int = 140,
+        qr_margin: int = 20,
+    ) -> Tuple[Optional[bytes], Optional[str]]:
+        """
+        HTML を PNG 化し、その上に QR を追加して返す。
+        成功時 (png_bytes, None)、失敗時 (None, error_message)。
+        """
+        png_bytes, pw_error = _html_to_png_with_playwright(html_bytes, viewport_width, viewport_height)
+        if not png_bytes or not checkin_url:
+            return (png_bytes, pw_error)
+        try:
+            base = Image.open(BytesIO(png_bytes)).convert("RGBA")
+            qr_img = self._build_qr_image(checkin_url, qr_size=qr_size)
+            padding = 15
+            qr_with_bg = Image.new(
+                "RGBA", (qr_size + padding * 2, qr_size + padding * 2), (255, 255, 255, 255)
+            )
+            qr_with_bg.paste(qr_img, (padding, padding), qr_img)
+            qr_x = base.width - qr_size - padding * 2 - qr_margin
+            qr_y = qr_margin
+            base.alpha_composite(qr_with_bg, (qr_x, qr_y))
+            out = BytesIO()
+            base.convert("RGB").save(out, format="PNG")
+            return (out.getvalue(), None)
+        except Exception as e:
+            logger.warning("Adding QR to HTML PNG failed: %s", e)
+            return (None, str(e))
+
     def render_ticket_png_from_metadata(
         self,
         metadata: Dict[str, Any],
         checkin_url: str,
         design: Optional[TicketDesign] = None,
+        background_image_bytes: Optional[bytes] = None,
     ) -> bytes:
         """
-        表示用 PNG: メタデータ ＋ TicketDesign（背景画像・layout JSON）＋ QR を PIL で描画する。
+        表示用 PNG: メタデータ ＋ 背景（HTML内画像優先）＋ QR を PIL で描画する。
+        デフォルトで background_image_bytes（HTML内の画像）があればそれを背景に使う。
         """
-        design = design or TicketDesign.get_active()
-        if not design or not design.template_image:
-            base = Image.new("RGBA", (800, 400), (30, 30, 50, 255))
-            layout = {}
-        else:
-            base = Image.open(design.template_image).convert("RGBA")
-            layout = (design.layout or {}) if isinstance(design.layout, dict) else {}
+        base = None
+        layout = {}
+        if background_image_bytes:
+            try:
+                base = Image.open(BytesIO(background_image_bytes)).copy().convert("RGBA")
+            except Exception as e:
+                logger.debug("HTML background image could not be loaded: %s", e)
+        if base is None:
+            design = design or TicketDesign.get_active()
+            if not design or not design.template_image:
+                base = Image.new("RGBA", (800, 400), (30, 30, 50, 255))
+            else:
+                base = None
+                try:
+                    if getattr(design.template_image, "path", None):
+                        base = Image.open(design.template_image.path).copy().convert("RGBA")
+                    else:
+                        with design.template_image.open("rb") as f:
+                            base = Image.open(f).copy().convert("RGBA")
+                except Exception as e:
+                    logger.warning(
+                        "TicketDesign template_image could not be loaded (design_id=%s): %s",
+                        getattr(design, "id", None),
+                        e,
+                    )
+                if base is None:
+                    base = Image.new("RGBA", (800, 400), (30, 30, 50, 255))
+                layout = (design.layout or {}) if isinstance(design.layout, dict) else {}
         draw = ImageDraw.Draw(base)
         payload = self.extract_ticket_payload_from_metadata(metadata)
         font = self._load_font(layout)
         lines = self._build_text_lines(payload)
+        if not any(lines):
+            lines = ("TICKET",)
         x, y = self._get_xy(layout.get("text", {}), default=(40, 40))
         line_gap = int(layout.get("text", {}).get("line_gap", 10))
         text_color = layout.get("text", {}).get("color", "#FFFFFF")
@@ -136,8 +347,8 @@ class TicketService:
             y += (font.size if hasattr(font, "size") else 12) + line_gap
         if checkin_url:
             qr_conf = layout.get("qr", {}) if isinstance(layout.get("qr"), dict) else {}
-            qr_x, qr_y = self._get_xy(qr_conf, default=(base.width - 320, 40))
-            qr_size = int(qr_conf.get("size", 260))
+            qr_x, qr_y = self._get_xy(qr_conf, default=(base.width - 200, 40))
+            qr_size = int(qr_conf.get("size", 140))
             qr_img = self._build_qr_image(checkin_url, qr_size=qr_size)
             padding = 20
             qr_with_bg = Image.new(
@@ -206,7 +417,7 @@ class TicketService:
         img = img.resize((qr_size, qr_size))
         return img
 
-    def _build_qr_data_url(self, data: str, qr_size: int = 260) -> str:
+    def _build_qr_data_url(self, data: str, qr_size: int = 140) -> str:
         """QRコード画像を生成し、data URL として返す（HTML 埋め込み用）"""
         img = self._build_qr_image(data, qr_size)
         out = BytesIO()
@@ -331,7 +542,7 @@ class TicketService:
         )
         nft_metadata_json = json.dumps(nft_metadata, ensure_ascii=False, indent=2)
         issue_date = now_iso()
-        return self._render_ticket_html_with_placeholders(
+        html = self._render_ticket_html_with_placeholders(
             event_name=event_name,
             event_date=event_date,
             venue=venue,
@@ -343,6 +554,19 @@ class TicketService:
             nft_metadata_json=nft_metadata_json,
             layout_html=layout_html,
         )
+        # テンプレートに {{ nft_metadata_json }} が無いと置換されずメタデータが埋まらない。
+        # その場合は </body> の直前に script#nft-metadata を挿入する。
+        if '"subTypeData"' not in html and '"map":' not in html:
+            script_block = (
+                '\n  <script type="application/json" id="nft-metadata">\n'
+                + nft_metadata_json
+                + "\n  </script>\n"
+            )
+            if "</body>" in html:
+                html = html.replace("</body>", script_block + "</body>", 1)
+            else:
+                html = html + script_block
+        return html
 
     def _get_issue_date_from_metadata(self, metadata: Dict[str, Any]) -> str:
         """メタデータの subTypeData.ticket.created_at を issue_date として返す。"""
@@ -426,8 +650,8 @@ class TicketService:
             y += (font.size if hasattr(font, "size") else 12) + line_gap
         if checkin_url:
             qr_conf = layout.get("qr", {}) if isinstance(layout.get("qr"), dict) else {}
-            qr_x, qr_y = self._get_xy(qr_conf, default=(base.width - 320, 40))
-            qr_size = int(qr_conf.get("size", 260))
+            qr_x, qr_y = self._get_xy(qr_conf, default=(base.width - 200, 40))
+            qr_size = int(qr_conf.get("size", 140))
             qr_img = self._build_qr_image(checkin_url, qr_size=qr_size)
             padding = 20
             qr_with_bg = Image.new(

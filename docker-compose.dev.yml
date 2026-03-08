@@ -1,9 +1,11 @@
 # 開発環境用 override。必ず bin/start-dev を使って起動すること。
 # docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+# venv をマウント: 初回起動時にコンテナ内で作成され、以降はイメージ再ビルドなしで pip 変更を反映可能。ホストからも . venv/bin/activate で確認可（Linux 同士の場合）。
 services:
   ticket_web:
     volumes:
       - ./app:/home/app/web
+      - ./venv:/home/app/venv
       - ./.env:/home/app/.env
     environment:
       - DEPLOY_ENV=development

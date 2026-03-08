@@ -98,11 +98,12 @@ sequenceDiagram
 ### 4.1 必須: ticket_html
 
 - **ticket_html**: チケット用の HTML ファイル（必須）。CSS やインライン画像（base64）などスタイルをすべてこの HTML に含める。
-- サーバ側では `{{ event_name }}`, `{{ event_date }}`, `{{ venue }}`, `{{ seat }}`, `{{ holder_paymail }}`, `{{ nft_metadata_json }}` のプレースホルダを置換し、`{{ background_block }}`, `{{ qr_block }}` は空で置換する。
+- サーバ側では `{{ event_name }}`, `{{ event_date }}`, `{{ venue }}`, `{{ seat }}`, `{{ holder_paymail }}`, `{{ issue_date }}`, `{{ nft_metadata_json }}` のプレースホルダを置換し、`{{ background_block }}`, `{{ qr_block }}` は空で置換する。
 
 ### 4.2 HTML テンプレートのプレースホルダ
 
 - **テキスト**: `{{ event_name }}`, `{{ event_date }}`, `{{ venue }}`, `{{ seat }}`, `{{ holder_paymail }}` を API の値で置換。
+- **作成日（発行日）**: `{{ issue_date }}` をサーバ発行日時（ISO 8601）で置換。未指定時はチケット生成時の現在時刻。
 - **JSON**: `{{ nft_metadata_json }}` に MAP 形式のメタデータ（JSON 文字列）を埋め込む。
 - **背景・QR**: `{{ background_block }}`, `{{ qr_block }}` は空文字。アップロード HTML 側で背景を用意する場合はそのまま記述し、プレースホルダがなければそのままでよい。
 

@@ -58,10 +58,10 @@ RUN if [ -z "$GID" ]; then GID=$UID; fi \
  && addgroup --gid $GID $USERNAME \
  && adduser --uid $UID --gid $GID $USERNAME
  
-# create the appropriate directories
+# create the appropriate directories（venv は開発時にボリュームマウント用）
 ENV HOME=/home/app
 ENV APP_HOME=/home/app/web
-RUN mkdir $APP_HOME
+RUN mkdir $APP_HOME /home/app/venv
 WORKDIR $APP_HOME
 
 # install dependencies
@@ -70,13 +70,23 @@ COPY --from=builder /usr/src/app/wheels /wheels
 COPY --from=builder /usr/src/app/requirements.txt .
 RUN pip install --upgrade pip
 RUN pip install --no-cache-dir /wheels/*
+# Playwright を確実に導入（wheels のみだと依存で入らない場合があるため）
+RUN pip install --no-cache-dir playwright>=1.40.0
+
+# Playwright: システム依存と Chromium をインストール（チケット HTML → PNG 用）
+ENV PLAYWRIGHT_BROWSERS_PATH=/home/app/.cache/ms-playwright
+RUN python -m playwright install-deps \
+ && python -m playwright install chromium \
+ && mkdir -p /home/app/.cache \
+ && chown -R ${USERNAME}:${USERNAME} /home/app/.cache
 
 # copy project
 COPY . $APP_HOME
 
-# chown all the files to the app user
+# chown all the files to the app user（venv は開発時マウントで上書きされる）
 RUN if [ -z "$GID" ]; then export GID=$UID; fi \
- && chown -R  ${USERNAME}:$GID $APP_HOME
+ && chown -R  ${USERNAME}:$GID $APP_HOME \
+ && chown ${USERNAME}:${USERNAME} /home/app/venv
 
 # change to the app user
 USER  ${USERNAME}

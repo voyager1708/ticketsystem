@@ -60,3 +60,20 @@ class TicketDesign(models.Model):
     def get_active(cls):
         return cls.objects.filter(is_active=True).order_by("-updated_at").first()
 
+
+class TicketCheckinUrl(models.Model):
+    """
+    チケット作成時に返した checkin_url を nft_origin ごとに保存する。
+    画像APIで同じURLをQRに使うため。
+    """
+    nft_origin = models.CharField(max_length=256, unique=True, db_index=True)
+    checkin_url = models.URLField(max_length=2048)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "ticket_system_ticket_checkin_url"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.nft_origin}: {self.checkin_url[:50]}..."
+

@@ -150,10 +150,12 @@ git checkout handson/v1-start
    （必要に応じて `.env` 内の `SECRET_KEY` や DB 接続先などを編集する。）
 
 2. **コンテナのビルド・起動**  
-   `docker-compose.dev.yml` は上書き用のため、**必ずベースの `docker-compose.yml` と合わせて**指定する。
+   `docker-compose.dev.yml` は上書き用のため、**`bin/start-dev` を使う**（内部で `docker compose -f docker-compose.yml -f docker-compose.dev.yml` を実行）。
    ```bash
-   sudo docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+   docker compose -f docker-compose.yml -f docker-compose.dev.yml build --no-cache ticket_web
+   ./bin/start-dev
    ```
+   設定変更やイメージ更新を反映したいときは `./bin/restart-dev` を使う（再起動ではなく再作成で反映）。
 
 3. **動作確認**（このリポジトリの Docker はポート **8001** で待ち受けます）
    ```bash
@@ -192,25 +194,6 @@ curl -fsS http://localhost:8000/healthz
 - `GET /healthz` が `200`
 - `http://localhost:8000/swagger/` で Swagger UI を開ける
 - その後、`documents/011_goal_steps_ai_pairing.md` の Step 1 に進める
-
----
-
-## 4. AIと一緒に進めるテンプレ
-
-詰まったら、以下をAIに渡して相談してください。
-
-1. 実行したコマンド
-2. 期待した結果
-3. 実際の結果（エラーメッセージ全文）
-
-プロンプト例:
-
-```text
-私は ticketsystem-start の handson/v1-start を進めています。
-いま実行したコマンドは「...」です。
-期待は「healthz が 200」でしたが、実際は「...」というエラーです。
-次に確認すべき点を優先度順に3つ教えてください。
-```
 
 ---
 

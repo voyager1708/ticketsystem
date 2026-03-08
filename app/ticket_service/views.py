@@ -17,9 +17,13 @@ from rest_framework.parsers import JSONParser, FormParser, MultiPartParser
 from drf_spectacular.utils import extend_schema, inline_serializer
 from drf_spectacular.extensions import OpenApiAuthenticationExtension
 
-from ticket_service.models import Account, TicketDesign
+from ticket_service.models import Account, TicketDesign, TicketCheckinUrl
 from ticket_service.services.base_api_client import BaseAPIClient
-from ticket_service.services.ticket_service import TicketService, strip_ordinals_envelope
+from ticket_service.services.ticket_service import (
+    TicketService,
+    extract_background_image_from_html,
+    strip_ordinals_envelope,
+)
 
 logger = logging.getLogger('ticket_service.views')
 
@@ -51,6 +55,26 @@ def _get_proxy_cookies(request) -> dict:
     if request.COOKIES.get('csrftoken'):
         cookies['csrftoken'] = request.COOKIES.get('csrftoken')
     return cookies
+
+
+def _get_checkin_url_from_metadata(metadata) -> str:
+    """
+    メタデータに作成時に保存した checkin_url があれば返す。
+    ticket.checkin_url または MAP.subTypeData.ticket.checkin_url を参照。
+    """
+    if not isinstance(metadata, dict):
+        return ""
+    ticket = metadata.get("ticket")
+    if isinstance(ticket, dict) and ticket.get("checkin_url"):
+        return str(ticket.get("checkin_url", "")).strip()
+    map_meta = metadata.get("MAP") or metadata.get("map")
+    if isinstance(map_meta, dict):
+        sub = map_meta.get("subTypeData")
+        if isinstance(sub, dict):
+            ticket = sub.get("ticket")
+            if isinstance(ticket, dict) and ticket.get("checkin_url"):
+                return str(ticket.get("checkin_url", "")).strip()
+    return ""
 
 
 class LoginForm(forms.Form):
@@ -809,6 +833,10 @@ class TicketCreateAPIView(APIView):
                 f"/api/ext/v1/ticket/checkin?token={token_str}",
             )
             ticket_image_url = f"/api/ext/v1/ticket/image/{nft_origin}"
+            TicketCheckinUrl.objects.update_or_create(
+                defaults={"checkin_url": checkin_url},
+                nft_origin=nft_origin,
+            )
         else:
             checkin_url = None
             ticket_image_url = None
@@ -872,22 +900,70 @@ class TicketImageAPIView(APIView):
         if not metadata and isinstance(nft_data, dict):
             metadata = nft_data
         ticket_service = TicketService()
-        checkin_url = request.build_absolute_uri(
-            f"/api/ext/v1/ticket/checkin?token={ticket_service.build_checkin_token(nft_origin)}"
+        raw_bytes = api_client.get_nft_raw(nft_origin, session_cookies)
+        html_bytes = strip_ordinals_envelope(raw_bytes) if raw_bytes else b""
+        payload = ticket_service.extract_ticket_payload_from_metadata(metadata)
+        if not any([payload.event_title, payload.event_datetime, payload.venue, payload.seat, payload.holder_name, payload.ticket_id]) and html_bytes:
+            payload_from_html = ticket_service.extract_ticket_payload_from_html(html_bytes)
+            if payload_from_html:
+                metadata = ticket_service.metadata_from_payload(payload_from_html)
+        checkin_url = (
+            TicketCheckinUrl.objects.filter(nft_origin=nft_origin).values_list("checkin_url", flat=True).first()
+            or _get_checkin_url_from_metadata(metadata)
         )
-        try:
-            png_bytes = ticket_service.render_ticket_png_from_metadata(
-                metadata=metadata,
-                checkin_url=checkin_url,
-                design=None,
+        if not checkin_url:
+            checkin_url = request.build_absolute_uri(
+                f"/api/ext/v1/ticket/checkin?token={ticket_service.build_checkin_token(nft_origin)}"
             )
-        except Exception as e:
-            logger.error("TicketImageAPIView render failed: %s", e, exc_info=True)
-            return Response(
-                {"error": "Failed to render ticket image"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
+        png_bytes = None
+        if html_bytes:
+            png_bytes, render_error = ticket_service.render_html_to_png_then_add_qr(html_bytes, checkin_url)
+            # HTML がある場合は NFT の内容をそのまま表示する。置換（メタデータから描き直し）は行わない。
+            if png_bytes is None:
+                logger.error(
+                    "TicketImageAPIView: HTML present but Playwright render failed for nft_origin=%s: %s",
+                    nft_origin,
+                    render_error or "unknown",
+                )
+                return Response(
+                    {
+                        "error": "Ticket image could not be rendered. Playwright may be unavailable.",
+                        "detail": render_error or "Unknown error",
+                    },
+                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                )
+        if png_bytes is None:
+            # HTML がない場合のみメタデータから PNG を描画
+            background_image_bytes = extract_background_image_from_html(html_bytes) if html_bytes else None
+            try:
+                png_bytes = ticket_service.render_ticket_png_from_metadata(
+                    metadata=metadata,
+                    checkin_url=checkin_url,
+                    design=None,
+                    background_image_bytes=background_image_bytes,
+                )
+            except Exception as e:
+                logger.error("TicketImageAPIView render failed: %s", e, exc_info=True)
+                payload = {"error": "Failed to render ticket image"}
+                if getattr(settings, "DEBUG", False):
+                    payload["detail"] = str(e)
+                return Response(
+                    payload,
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
         return HttpResponse(png_bytes, content_type="image/png")
+
+    def _extract_session_cookies(self, request):
+        base_api_cookies = request.session.get("base_api_cookies", {})
+        if base_api_cookies:
+            return base_api_cookies
+        cookies = {}
+        if hasattr(request, "COOKIES"):
+            if request.COOKIES.get("sessionid"):
+                cookies["sessionid"] = request.COOKIES.get("sessionid")
+            if request.COOKIES.get("csrftoken"):
+                cookies["csrftoken"] = request.COOKIES.get("csrftoken")
+        return cookies
 
 
 class TicketHtmlAPIView(APIView):
