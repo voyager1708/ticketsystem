@@ -1,11 +1,14 @@
 import json
 import logging
 import os
+from pathlib import Path
 import requests
 from django import forms
 from django.conf import settings
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
+from django.utils.dateparse import parse_datetime
+from django.utils.timezone import now as tz_now
 from django.views import View
 from rest_framework import serializers
 from rest_framework.views import APIView
@@ -17,11 +20,12 @@ from rest_framework.parsers import JSONParser, FormParser, MultiPartParser
 from drf_spectacular.utils import extend_schema, inline_serializer
 from drf_spectacular.extensions import OpenApiAuthenticationExtension
 
-from ticket_service.models import Account, TicketDesign, TicketCheckinUrl
+from ticket_service.models import Account, TicketDesign, TicketCheckinRecord, TicketCheckinUrl
 from ticket_service.services.base_api_client import BaseAPIClient
 from ticket_service.services.ticket_service import (
     TicketService,
     extract_background_image_from_html,
+    now_iso,
     strip_ordinals_envelope,
 )
 
@@ -676,6 +680,104 @@ class AuthUserProxyAPIView(BaseAPIProxyMixin, APIView):
         return self._proxy_request(request, "GET", "/api/v1/user/info")
 
 
+class TicketListAPIView(APIView):
+    """
+    チケットNFT一覧取得API
+    GET /api/ext/v1/ticket/list
+    """
+    authentication_classes = [CsrfExemptSessionAuthentication]
+    permission_classes = [AllowAny]
+
+    @extend_schema(
+        summary="List Ticket NFTs",
+        description="ログインユーザーのNFTからチケット情報を抽出して返す。",
+        tags=["ticket"],
+        responses={
+            200: inline_serializer(
+                name="TicketListSuccess",
+                fields={
+                    "count": serializers.IntegerField(),
+                    "results": serializers.ListField(
+                        child=inline_serializer(
+                            name="TicketListItem",
+                            fields={
+                                "nft_origin": serializers.CharField(),
+                                "checkin_url": serializers.CharField(allow_null=True),
+                                "ticket_image_url": serializers.CharField(allow_null=True),
+                                "event_name": serializers.CharField(allow_null=True),
+                                "event_date": serializers.CharField(allow_null=True),
+                                "venue": serializers.CharField(allow_null=True),
+                                "seat": serializers.CharField(allow_null=True),
+                            },
+                        ),
+                    ),
+                },
+            ),
+            401: inline_serializer(name="TicketListUnauthorized", fields={"detail": serializers.CharField()}),
+        },
+    )
+    def get(self, request):
+        session_cookies = self._extract_session_cookies(request)
+        if not session_cookies:
+            return Response({"detail": UNAUTHENTICATED_DETAIL}, status=status.HTTP_401_UNAUTHORIZED)
+
+        api_client = BaseAPIClient()
+        ticket_service = TicketService()
+        nfts = api_client.get_user_nfts(session_cookies)
+        if isinstance(nfts, dict):
+            nfts = nfts.get("results") or nfts.get("nfts") or []
+        if not isinstance(nfts, list):
+            nfts = []
+
+        results = []
+        for nft in nfts:
+            if not isinstance(nft, dict):
+                continue
+
+            nft_origin = nft.get("nft_origin")
+            if not nft_origin:
+                continue
+
+            metadata = nft.get("metadata", {})
+            if not isinstance(metadata, dict):
+                metadata = {}
+
+            payload = ticket_service.extract_ticket_payload_from_metadata(metadata)
+            checkin_url = (
+                TicketCheckinUrl.objects.filter(nft_origin=nft_origin).values_list("checkin_url", flat=True).first()
+                or _get_checkin_url_from_metadata(metadata)
+            )
+            if not checkin_url:
+                token = ticket_service.build_checkin_token(nft_origin=nft_origin)
+                checkin_url = request.build_absolute_uri(f"/api/ext/v1/ticket/checkin?token={token}")
+
+            results.append(
+                {
+                    "nft_origin": nft_origin,
+                    "checkin_url": checkin_url,
+                    "ticket_image_url": f"/api/ext/v1/ticket/image/{nft_origin}",
+                    "event_name": payload.event_title or None,
+                    "event_date": payload.event_datetime or None,
+                    "venue": payload.venue or None,
+                    "seat": payload.seat or None,
+                }
+            )
+
+        return Response({"count": len(results), "results": results})
+
+    def _extract_session_cookies(self, request):
+        base_api_cookies = request.session.get("base_api_cookies", {})
+        if base_api_cookies:
+            return base_api_cookies
+        cookies = {}
+        if hasattr(request, "COOKIES"):
+            if request.COOKIES.get("sessionid"):
+                cookies["sessionid"] = request.COOKIES.get("sessionid")
+            if request.COOKIES.get("csrftoken"):
+                cookies["csrftoken"] = request.COOKIES.get("csrftoken")
+        return cookies
+
+
 class TicketCreateAPIView(APIView):
     """
     チケットNFT作成API（参考実装・goal ブランチ由来）
@@ -1003,6 +1105,461 @@ class TicketHtmlAPIView(APIView):
         response = HttpResponse(html_bytes, content_type="text/html; charset=utf-8")
         response["Content-Disposition"] = 'attachment; filename="ticket.html"'
         return response
+
+    def _extract_session_cookies(self, request):
+        base_api_cookies = request.session.get("base_api_cookies", {})
+        if base_api_cookies:
+            return base_api_cookies
+        cookies = {}
+        if hasattr(request, "COOKIES"):
+            if request.COOKIES.get("sessionid"):
+                cookies["sessionid"] = request.COOKIES.get("sessionid")
+            if request.COOKIES.get("csrftoken"):
+                cookies["csrftoken"] = request.COOKIES.get("csrftoken")
+        return cookies
+
+
+class TicketCheckinAPIView(APIView):
+    """
+    チェックインAPI
+    GET/POST /api/ext/v1/ticket/checkin
+    """
+    authentication_classes = [CsrfExemptSessionAuthentication]
+    permission_classes = [AllowAny]
+
+    @extend_schema(
+        summary="Ticket check-in status",
+        description="token を検証してチケットの利用状態（used/used_at）を返す。更新は行わない。",
+        tags=["ticket"],
+        parameters=[
+            {
+                "name": "token",
+                "in": "query",
+                "required": True,
+                "schema": {"type": "string"},
+                "description": "チェックイントークン",
+            }
+        ],
+        responses={
+            200: inline_serializer(
+                name="TicketCheckinStatusSuccess",
+                fields={
+                    "used": serializers.BooleanField(),
+                    "used_at": serializers.CharField(allow_null=True),
+                    "nft_origin": serializers.CharField(),
+                    "message": serializers.CharField(),
+                },
+            ),
+            400: inline_serializer(name="TicketCheckinStatusBadRequest", fields={"error": serializers.CharField()}),
+            401: inline_serializer(name="TicketCheckinStatusUnauthorized", fields={"detail": serializers.CharField()}),
+            404: inline_serializer(name="TicketCheckinStatusNotFound", fields={"error": serializers.CharField()}),
+        },
+    )
+    def get(self, request):
+        token = request.query_params.get("token")
+        if not token:
+            return Response({"error": "Token required"}, status=status.HTTP_400_BAD_REQUEST)
+        return self._get_checkin_status(request, token)
+
+    @extend_schema(
+        summary="Ticket check-in execute",
+        description=(
+            "token を検証し、未使用チケットを使用済みに更新する。"
+            "TicketDesign.checkin_reward_image があれば報酬NFT作成を試行する。"
+        ),
+        tags=["ticket"],
+        request=inline_serializer(
+            name="TicketCheckinExecuteRequest",
+            fields={"token": serializers.CharField()},
+        ),
+        responses={
+            200: inline_serializer(
+                name="TicketCheckinExecuteSuccess",
+                fields={
+                    "used": serializers.BooleanField(),
+                    "used_at": serializers.CharField(allow_null=True),
+                    "nft_origin": serializers.CharField(),
+                    "message": serializers.CharField(required=False),
+                    "reward_nft": serializers.JSONField(allow_null=True, required=False),
+                },
+            ),
+            400: inline_serializer(name="TicketCheckinExecuteBadRequest", fields={"error": serializers.CharField()}),
+            401: inline_serializer(name="TicketCheckinExecuteUnauthorized", fields={"detail": serializers.CharField()}),
+            404: inline_serializer(name="TicketCheckinExecuteNotFound", fields={"error": serializers.CharField()}),
+            500: inline_serializer(name="TicketCheckinExecuteServerError", fields={"error": serializers.CharField()}),
+        },
+    )
+    def post(self, request):
+        token = request.data.get("token")
+        if not token:
+            return Response({"error": "Token required"}, status=status.HTTP_400_BAD_REQUEST)
+        return self._process_checkin(request, token)
+
+    def _fetch_ticket_metadata(self, api_client: BaseAPIClient, nft_origin: str, session_cookies: dict):
+        """
+        check-in時のメタデータ取得。
+        Base APIのレスポンス形式差分やメタAPI制限に備えて複数経路で取得する。
+        """
+        try:
+            metadata = api_client.get_nft_metadata(nft_origin, session_cookies)
+            if metadata is not None:
+                return metadata
+
+            nft_data = api_client.get_nft(nft_origin, session_cookies)
+            if isinstance(nft_data, dict):
+                nested_metadata = nft_data.get("metadata")
+                if isinstance(nested_metadata, dict):
+                    return nested_metadata
+                return nft_data
+
+            fallback_nft = api_client.get_nft_from_user_list(nft_origin, session_cookies)
+            if isinstance(fallback_nft, dict):
+                fallback_metadata = fallback_nft.get("metadata")
+                if isinstance(fallback_metadata, dict):
+                    return fallback_metadata
+                return fallback_nft
+        except Exception:
+            logger.exception("Failed to fetch ticket metadata for check-in: nft_origin=%s", nft_origin)
+
+        return None
+
+    def _get_checkin_status(self, request, token: str):
+        try:
+            ticket_service = TicketService()
+            try:
+                nft_origin = ticket_service.verify_checkin_token(token)
+            except Exception as e:
+                logger.warning("Invalid check-in token: %s", e)
+                return Response({"error": "Invalid or expired token"}, status=status.HTTP_400_BAD_REQUEST)
+
+            session_cookies = self._extract_session_cookies(request)
+            if not session_cookies:
+                return Response({"detail": UNAUTHENTICATED_DETAIL}, status=status.HTTP_401_UNAUTHORIZED)
+
+            api_client = BaseAPIClient()
+            metadata = self._fetch_ticket_metadata(api_client, nft_origin, session_cookies)
+            if metadata is None:
+                return Response({"error": "NFT not found"}, status=status.HTTP_404_NOT_FOUND)
+
+            ticket_info = self._extract_ticket_info(metadata)
+            used_at = ticket_info.get("used_at")
+            local_record = TicketCheckinRecord.objects.filter(nft_origin=nft_origin).first()
+            if local_record:
+                used_at = local_record.used_at.isoformat().replace("+00:00", "Z")
+            used = bool(used_at)
+            return Response(
+                {
+                    "used": used,
+                    "used_at": used_at,
+                    "nft_origin": nft_origin,
+                    "message": "Already checked in" if used else "Not checked in",
+                }
+            )
+        except Exception as e:
+            logger.exception("Unhandled error in check-in status endpoint")
+            payload = {"error": "Internal server error"}
+            if getattr(settings, "DEBUG", False):
+                payload["detail"] = str(e)
+            return Response(payload, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def _process_checkin(self, request, token: str):
+        try:
+            ticket_service = TicketService()
+            try:
+                nft_origin = ticket_service.verify_checkin_token(token)
+            except Exception as e:
+                logger.warning("Invalid check-in token: %s", e)
+                return Response({"error": "Invalid or expired token"}, status=status.HTTP_400_BAD_REQUEST)
+
+            session_cookies = self._extract_session_cookies(request)
+            if not session_cookies:
+                return Response({"detail": UNAUTHENTICATED_DETAIL}, status=status.HTTP_401_UNAUTHORIZED)
+
+            api_client = BaseAPIClient()
+            metadata = self._fetch_ticket_metadata(api_client, nft_origin, session_cookies)
+            if metadata is None:
+                return Response({"error": "NFT not found"}, status=status.HTTP_404_NOT_FOUND)
+
+            ticket_info = self._extract_ticket_info(metadata)
+            metadata_used_at = ticket_info.get("used_at")
+            local_record = TicketCheckinRecord.objects.filter(nft_origin=nft_origin).first()
+            if metadata_used_at or local_record:
+                return Response(
+                    {
+                        "used": True,
+                        "used_at": (
+                            metadata_used_at
+                            or (local_record.used_at.isoformat().replace("+00:00", "Z") if local_record else None)
+                        ),
+                        "nft_origin": nft_origin,
+                        "message": "Already checked in",
+                    }
+                )
+
+            updated_ticket = dict(ticket_info)
+            updated_ticket["used_at"] = now_iso()
+            if hasattr(request, "user") and getattr(request.user, "is_authenticated", False):
+                updated_ticket["checked_in_by"] = request.user.username
+
+            # BASE API が metadata 更新非対応の環境でも check-in できるよう、
+            # まずローカルDBに記録し、metadata 更新はベストエフォートで行う。
+            local_used_at = updated_ticket["used_at"]
+            local_used_at_dt = parse_datetime(local_used_at)
+            if local_used_at_dt is None:
+                local_used_at_dt = tz_now()
+            TicketCheckinRecord.objects.update_or_create(
+                nft_origin=nft_origin,
+                defaults={
+                    "used_at": local_used_at_dt,
+                    "checked_in_by": updated_ticket.get("checked_in_by", ""),
+                },
+            )
+
+            updated_metadata = {"MAP": {"subTypeData": {"ticket": updated_ticket}}}
+            metadata_update_ok = api_client.update_nft_metadata(nft_origin, updated_metadata, session_cookies)
+            if not metadata_update_ok:
+                logger.warning(
+                    "Check-in metadata update skipped (unsupported or failed): nft_origin=%s",
+                    nft_origin,
+                )
+
+            reward_nft = None
+            design = TicketDesign.get_active()
+            reward_nft = self._send_checkin_reward(
+                api_client=api_client,
+                session_cookies=session_cookies,
+                metadata=metadata,
+                nft_origin=nft_origin,
+                design=design,
+            )
+
+            return Response(
+                {
+                    "used": True,
+                    "used_at": local_used_at,
+                    "nft_origin": nft_origin,
+                    "reward_nft": reward_nft,
+                    "metadata_updated": metadata_update_ok,
+                }
+            )
+        except Exception as e:
+            logger.exception("Unhandled error in check-in execute endpoint")
+            payload = {"error": "Internal server error"}
+            if getattr(settings, "DEBUG", False):
+                payload["detail"] = str(e)
+            return Response(payload, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def _send_checkin_reward(
+        self,
+        api_client: BaseAPIClient,
+        session_cookies: dict,
+        metadata: dict,
+        nft_origin: str,
+        design: TicketDesign | None,
+    ):
+        try:
+            image_data = None
+            image_filename = "checkin_reward.png"
+
+            # 1) TicketDesign の報酬画像があれば最優先
+            if design and design.checkin_reward_image:
+                with design.checkin_reward_image.open("rb") as f:
+                    image_data = f.read()
+                image_filename = getattr(design.checkin_reward_image, "name", "") or image_filename
+
+            # 2) 無ければ既定画像（RewardCreateAPIView と同じ）
+            if not image_data:
+                default_image_path = Path(settings.BASE_DIR) / "image_samples" / "SendaiArt1_Reward.jpg"
+                if default_image_path.exists():
+                    image_data = default_image_path.read_bytes()
+                    image_filename = default_image_path.name
+                else:
+                    logger.warning(
+                        "Check-in reward image not found (design/default). skip reward for nft_origin=%s",
+                        nft_origin,
+                    )
+                    return {"error": "Reward image not configured"}
+
+            ticket_info = self._extract_ticket_info(metadata)
+            recipient_paymail = ticket_info.get("holder_paymail") or None
+            if not recipient_paymail:
+                # 受領者不明時はベースAPI既定（実行ユーザー）に委ねる
+                logger.info("Recipient paymail not found in NFT metadata; fallback to current user")
+
+            reward_metadata = {
+                "ticket": {
+                    "reward_for": nft_origin,
+                    "reward_type": "checkin_reward",
+                }
+            }
+            result = api_client.create_reward_nft(
+                image_file=image_data,
+                image_filename=image_filename,
+                metadata=reward_metadata,
+                recipient_paymail=recipient_paymail,
+                session_cookies=session_cookies,
+            )
+            if not result:
+                return {"error": "Failed to create reward NFT"}
+            return {
+                "created": True,
+                "nft_origin": result.get("nft_information", {}).get("nft_origin"),
+            }
+        except Exception as e:
+            logger.error("Failed to send check-in reward: %s", e, exc_info=True)
+            return {"error": str(e)}
+
+    def _extract_ticket_info(self, metadata: dict) -> dict:
+        if not isinstance(metadata, dict):
+            return {}
+        map_value = metadata.get("MAP")
+        if not isinstance(map_value, dict):
+            map_value = metadata.get("map")
+        map_meta = map_value if isinstance(map_value, dict) else {}
+        sub = map_meta.get("subTypeData")
+        if isinstance(sub, str):
+            try:
+                sub = json.loads(sub)
+            except Exception:
+                sub = {}
+        if isinstance(sub, dict):
+            ticket = sub.get("ticket")
+            if isinstance(ticket, dict):
+                return ticket
+        return {}
+
+    def _extract_session_cookies(self, request):
+        base_api_cookies = request.session.get("base_api_cookies", {})
+        if base_api_cookies:
+            return base_api_cookies
+        cookies = {}
+        if hasattr(request, "COOKIES"):
+            if request.COOKIES.get("sessionid"):
+                cookies["sessionid"] = request.COOKIES.get("sessionid")
+            if request.COOKIES.get("csrftoken"):
+                cookies["csrftoken"] = request.COOKIES.get("csrftoken")
+        return cookies
+
+
+class RewardCreateAPIView(APIView):
+    """
+    報酬NFT作成API
+    POST /api/ext/v1/reward/create
+    """
+    authentication_classes = [CsrfExemptSessionAuthentication]
+    permission_classes = [AllowAny]
+    parser_classes = [JSONParser, FormParser, MultiPartParser]
+
+    @extend_schema(
+        summary="Create reward NFT",
+        description=(
+            "報酬NFTを作成します。reward_image を未指定の場合は "
+            "image_samples/SendaiArt1_Reward.jpg を使用します。"
+            "受領者は常に実行ユーザー（自分）です。"
+        ),
+        tags=["reward"],
+        request={
+            "multipart/form-data": {
+                "type": "object",
+                "properties": {
+                    "reward_image": {"type": "string", "format": "binary", "description": "報酬画像（省略可）"},
+                    "reward_name": {"type": "string", "description": "報酬NFT名（省略時: Check-in Reward）"},
+                },
+            },
+        },
+        responses={
+            201: inline_serializer(
+                name="RewardCreateSuccess",
+                fields={
+                    "status": serializers.CharField(),
+                    "message": serializers.CharField(),
+                    "transaction_id": serializers.CharField(allow_null=True),
+                    "nft_origin": serializers.CharField(allow_null=True),
+                    "nft_information": serializers.JSONField(allow_null=True),
+                },
+            ),
+            400: inline_serializer(name="RewardCreateBadRequest", fields={"error": serializers.CharField()}),
+            401: inline_serializer(name="RewardCreateUnauthorized", fields={"detail": serializers.CharField()}),
+            500: inline_serializer(name="RewardCreateServerError", fields={"error": serializers.CharField()}),
+        },
+    )
+    def post(self, request):
+        session_cookies = self._extract_session_cookies(request)
+        if not session_cookies:
+            return Response(
+                {"detail": UNAUTHENTICATED_DETAIL},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        reward_file = request.FILES.get("reward_image")
+        reward_name = request.data.get("reward_name") or "Check-in Reward"
+
+        if reward_file:
+            image_bytes = reward_file.read()
+            image_filename = getattr(reward_file, "name", "reward.png")
+            if not image_bytes:
+                return Response(
+                    {"error": "reward_image is empty"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        else:
+            # 既定画像（image_samples/SendaiArt1_Reward.jpg）を使用
+            default_image_path = Path(settings.BASE_DIR) / "image_samples" / "SendaiArt1_Reward.jpg"
+            if not default_image_path.exists():
+                return Response(
+                    {
+                        "error": (
+                            "Default reward image not found: "
+                            "image_samples/SendaiArt1_Reward.jpg"
+                        )
+                    },
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
+            try:
+                image_bytes = default_image_path.read_bytes()
+                image_filename = default_image_path.name
+            except Exception as e:
+                logger.error("Failed to read default reward image: %s", e, exc_info=True)
+                return Response(
+                    {"error": "Failed to read default reward image"},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
+
+        metadata = {
+            "ticket": {
+                "reward_type": "checkin_reward",
+                "source": "ext_reward_create_api",
+            }
+        }
+        if reward_name:
+            metadata["ticket"]["reward_name"] = reward_name
+
+        api_client = BaseAPIClient()
+        result = api_client.create_reward_nft(
+            image_file=image_bytes,
+            image_filename=image_filename,
+            metadata=metadata,
+            # 受領者は未指定にしてベースAPI既定動作（実行ユーザー＝自分）に委ねる
+            recipient_paymail=None,
+            session_cookies=session_cookies,
+        )
+        if not result:
+            return Response(
+                {"error": "Failed to create reward NFT"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        nft_info = result.get("nft_information", {}) if isinstance(result, dict) else {}
+        return Response(
+            {
+                "status": "success",
+                "message": "Reward NFT created successfully",
+                "transaction_id": result.get("transaction_id") if isinstance(result, dict) else None,
+                "nft_origin": nft_info.get("nft_origin"),
+                "nft_information": nft_info,
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
     def _extract_session_cookies(self, request):
         base_api_cookies = request.session.get("base_api_cookies", {})

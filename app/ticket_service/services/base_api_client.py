@@ -180,8 +180,14 @@ class BaseAPIClient:
             NFT情報の辞書、またはNone（見つからない場合）
         """
         nfts = self.get_user_nfts(session_cookies)
+        if isinstance(nfts, dict):
+            # API実装差分: {"results": [...]} / {"nfts": [...]} などを許容
+            nfts = nfts.get("results") or nfts.get("nfts") or []
+        if not isinstance(nfts, list):
+            logger.warning("Unexpected user NFT list response type: %s", type(nfts).__name__)
+            return None
         for nft in nfts:
-            if nft.get('nft_origin') == nft_origin:
+            if isinstance(nft, dict) and nft.get('nft_origin') == nft_origin:
                 logger.debug(f"Found NFT {nft_origin} in user's NFT list")
                 return nft
         logger.warning(f"NFT {nft_origin} not found in user's NFT list")
@@ -223,8 +229,26 @@ class BaseAPIClient:
             response.raise_for_status()
             data = response.json()
             print(f"get_nft_metadata: Response data keys={list(data.keys()) if isinstance(data, dict) else 'not dict'}", flush=True)
+            if not isinstance(data, dict):
+                return None
+
+            # Base APIのレスポンス形式差分を吸収:
+            # - {"status": "success", "metadata": {...}}
+            # - {"metadata": {...}}
+            # - 直接メタデータ本体 {...}
             if data.get('status') == 'success':
-                return data.get('metadata', {})
+                metadata = data.get('metadata')
+                if isinstance(metadata, dict):
+                    return metadata
+                return {}
+
+            if isinstance(data.get('metadata'), dict):
+                return data.get('metadata')
+
+            if any(key in data for key in ('MAP', 'map', 'ticket', 'subTypeData')):
+                return data
+
+            logger.warning("Unexpected NFT metadata response shape for %s: keys=%s", nft_origin, list(data.keys()))
             return None
         except requests.exceptions.HTTPError as e:
             if e.response.status_code == 404:
@@ -299,7 +323,7 @@ class BaseAPIClient:
         image_file: bytes,
         image_filename: str,
         metadata: Dict,
-        recipient_paymail: str,
+        recipient_paymail: Optional[str],
         session_cookies: Dict[str, str]
     ) -> Optional[Dict[str, Any]]:
         """
@@ -336,15 +360,25 @@ class BaseAPIClient:
         # Refererヘッダーを追加（CSRF対策のため必要・チケットNFT作成と同様）
         headers['Referer'] = self.base_url + '/'
         
+        image_name = (image_filename or "").lower()
+        if image_name.endswith(".jpg") or image_name.endswith(".jpeg"):
+            content_type = "image/jpeg"
+        elif image_name.endswith(".webp"):
+            content_type = "image/webp"
+        elif image_name.endswith(".gif"):
+            content_type = "image/gif"
+        else:
+            content_type = "image/png"
         files = {
-            'file': (image_filename, image_file, 'image/png')
+            'file': (image_filename, image_file, content_type)
         }
         data = {
             'app': 'Ticket System',
             'name': 'Check-in Reward',
             'additional_info': json.dumps(metadata),
-            'recipient_paymail': recipient_paymail
         }
+        if recipient_paymail:
+            data['recipient_paymail'] = recipient_paymail
         
         try:
             response = session.post(

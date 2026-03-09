@@ -5,6 +5,7 @@ services:
   ticket_web:
     volumes:
       - ./app:/home/app/web
+      - ./image_samples:/home/app/web/image_samples
       - ./venv:/home/app/venv
       - ./.env:/home/app/.env
     environment:

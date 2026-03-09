@@ -77,3 +77,22 @@ class TicketCheckinUrl(models.Model):
     def __str__(self):
         return f"{self.nft_origin}: {self.checkin_url[:50]}..."
 
+
+class TicketCheckinRecord(models.Model):
+    """
+    BASE API 側で NFT metadata 更新が使えない環境向けに、
+    チェックイン状態を拡張API側DBに保持する。
+    """
+    nft_origin = models.CharField(max_length=256, unique=True, db_index=True)
+    used_at = models.DateTimeField()
+    checked_in_by = models.CharField(max_length=150, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "ticket_system_ticket_checkin_record"
+        ordering = ["-used_at"]
+
+    def __str__(self):
+        return f"{self.nft_origin}: {self.used_at.isoformat()}"
+
