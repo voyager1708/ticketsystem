@@ -1,0 +1,158 @@
+---
+- name: Install/Start Django app and run migrations
+  hosts: all
+  become: true
+  vars:
+    project_root: /mnt/extra/ticket_system
+    venv_path: /mnt/extra/ticket_system/.venv
+    requirements_path: /mnt/extra/ticket_system/app/requirements.txt
+    domain_name: ticket.buxbit.net
+    certbot_email: admin@buxbit.net
+  tasks:
+    #=========================================================================
+    # 1. SSL Certificate Setup (Let's Encrypt)
+    #=========================================================================
+    - name: Install certbot
+      ansible.builtin.apt:
+        name:
+          - certbot
+        state: present
+        update_cache: yes
+
+    - name: Check if SSL certificate exists
+      ansible.builtin.stat:
+        path: "/etc/letsencrypt/live/{{ domain_name }}/fullchain.pem"
+      register: ssl_cert
+
+    - name: Stop nginx temporarily for certbot (if running)
+      ansible.builtin.command: docker compose stop ticket_nginx
+      args:
+        chdir: "{{ project_root }}"
+      ignore_errors: yes
+      when: not ssl_cert.stat.exists
+
+    - name: Obtain SSL certificate with certbot
+      ansible.builtin.command: >-
+        certbot certonly --standalone
+        -d {{ domain_name }}
+        --non-interactive
+        --agree-tos
+        --email {{ certbot_email }}
+      when: not ssl_cert.stat.exists
+
+    #=========================================================================
+    # 2. Directory Setup and Permissions
+    #=========================================================================
+    - name: Create media directories with proper permissions
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0777'
+        recurse: yes
+      loop:
+        - "{{ project_root }}/app/media"
+        - "{{ project_root }}/app/media/ticket_templates"
+        - "{{ project_root }}/app/media/ticket_templates/checkin_rewards"
+
+    - name: Create static directory
+      ansible.builtin.file:
+        path: "{{ project_root }}/app/static"
+        state: directory
+        mode: '0755'
+
+    - name: Ensure nginx log directory exists
+      ansible.builtin.file:
+        path: /var/log/nginx
+        state: directory
+        mode: '0755'
+
+    #=========================================================================
+    # 3. Python Virtual Environment (for local debugging)
+    #=========================================================================
+    - name: Create local venv for debugging (same deps as Docker)
+      ansible.builtin.command: python3 -m venv "{{ venv_path }}"
+      args:
+        creates: "{{ venv_path }}/bin/activate"
+
+    - name: Install Python requirements into venv
+      ansible.builtin.command: "{{ venv_path }}/bin/pip install -r {{ requirements_path }}"
+      args:
+        chdir: "{{ project_root }}"
+
+    #=========================================================================
+    # 4. Docker Services
+    #=========================================================================
+    - name: Build Docker images
+      ansible.builtin.command: docker compose build
+      args:
+        chdir: "{{ project_root }}"
+
+    - name: Start all Docker services
+      ansible.builtin.command: docker compose up -d
+      args:
+        chdir: "{{ project_root }}"
+
+    - name: Wait for services to be ready
+      ansible.builtin.pause:
+        seconds: 10
+
+    #=========================================================================
+    # 5. Django Setup
+    #=========================================================================
+    - name: Run Django migrations
+      ansible.builtin.command: docker compose exec -T ticket_web python manage.py migrate --noinput
+      args:
+        chdir: "{{ project_root }}"
+
+    - name: Collect static files (run as root to avoid permission issues)
+      ansible.builtin.command: docker compose exec -T -u root ticket_web python manage.py collectstatic --noinput
+      args:
+        chdir: "{{ project_root }}"
+
+    - name: Setup default TicketDesign
+      ansible.builtin.command: docker compose exec -T ticket_web python manage.py setup_default_ticket_design
+      args:
+        chdir: "{{ project_root }}"
+      ignore_errors: yes
+
+    #=========================================================================
+    # 6. Nginx Reload
+    #=========================================================================
+    - name: Reload Nginx configuration
+      ansible.builtin.command: docker compose exec -T ticket_nginx nginx -s reload
+      args:
+        chdir: "{{ project_root }}"
+      ignore_errors: yes
+
+    #=========================================================================
+    # 7. Health Check
+    #=========================================================================
+    - name: Check if web service is running
+      ansible.builtin.command: docker compose ps ticket_web
+      args:
+        chdir: "{{ project_root }}"
+      register: web_status
+
+    - name: Display web service status
+      ansible.builtin.debug:
+        var: web_status.stdout_lines
+
+    - name: Check if nginx is running
+      ansible.builtin.command: docker compose ps ticket_nginx
+      args:
+        chdir: "{{ project_root }}"
+      register: nginx_status
+
+    - name: Display nginx status
+      ansible.builtin.debug:
+        var: nginx_status.stdout_lines
+
+    # Optional: create superuser without TTY (set env vars before running)
+    # - name: Create Django superuser (noinput)
+    #   ansible.builtin.command: >-
+    #     docker compose exec -T -e DJANGO_SUPERUSER_USERNAME=admin
+    #     -e DJANGO_SUPERUSER_EMAIL=admin@example.com
+    #     -e DJANGO_SUPERUSER_PASSWORD=changeme
+    #     ticket_web python manage.py createsuperuser --noinput
+    #   args:
+    #     chdir: "{{ project_root }}"

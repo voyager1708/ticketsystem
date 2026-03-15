@@ -1,0 +1,65 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>マイチケット・報酬</title>
+  <link rel="stylesheet" href="{% static 'ticket_service/tickets.css' %}">
+</head>
+<body>
+  <div class="tickets-page">
+    <h1>マイチケット・報酬</h1>
+    <p><a href="{% url 'tickets' %}" class="refresh-link">更新</a></p>
+
+    <section>
+      <h2>マイチケット</h2>
+      {% if ticket_list %}
+        <div class="tickets-grid">
+          {% for item in ticket_list %}
+            <div class="ticket-card">
+              {% if item.ticket_image_url %}
+                <img src="{{ item.ticket_image_url }}" alt="チケット画像" loading="lazy">
+              {% endif %}
+              <div class="card-body">
+                <p class="ticket-status">{% if item.used %}使用済み{% if item.used_at %}（{{ item.used_at }}）{% endif %}{% else %}未使用{% endif %}</p>
+                {% if item.event_name %}<p><strong>{{ item.event_name }}</strong></p>{% endif %}
+                {% if item.event_date %}<p>日時: {{ item.event_date }}</p>{% endif %}
+                {% if item.venue %}<p>会場: {{ item.venue }}</p>{% endif %}
+                {% if item.seat %}<p>座席: {{ item.seat }}</p>{% endif %}
+                {% if item.checkin_url and not item.used %}
+                  <a href="{{ item.checkin_url }}" class="checkin-link" target="_blank" rel="noopener">チェックイン</a>
+                {% endif %}
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="empty">チケットはありません。</p>
+      {% endif %}
+    </section>
+
+    <section>
+      <h2>マイ報酬</h2>
+      {% if reward_list %}
+        <div class="rewards-grid">
+          {% for item in reward_list %}
+            <div class="reward-card">
+              {% if item.nft_origin %}
+                <img src="/api/ext/v1/reward/image/{{ item.nft_origin }}" alt="報酬画像" loading="lazy">
+              {% endif %}
+              <div class="card-body">
+                {% if item.reward_name %}<p><strong>{{ item.reward_name }}</strong></p>{% endif %}
+                {% if item.reward_for %}<p>対象: {{ item.reward_for }}</p>{% endif %}
+                {% if item.created_at %}<p>取得日: {{ item.created_at }}</p>{% endif %}
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="empty">報酬はありません。</p>
+      {% endif %}
+    </section>
+  </div>
+</body>
+</html>
