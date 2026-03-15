@@ -1,0 +1,23 @@
+ticketsystem-start/
+├── app/
+│   ├── ticket_service/           # 拡張API（チケット・チェックイン・報酬）
+│   │   ├── views.py
+│   │   ├── urls.py
+│   │   ├── models.py
+│   │   └── services/
+│   │       ├── base_api_client.py
+│   │       └── ticket_service.py
+│   ├── ticket_system/             # Django プロジェクト設定
+│   │   ├── settings.py
+│   │   └── urls.py
+│   ├── manage.py
+│   ├── requirements.txt
+│   └── Dockerfile
+├── bin/
+│   ├── start-dev                  # 開発用コンテナ起動
+│   └── restart-dev
+├── image_samples/
+│   └── ticket_sample.html         # チケットHTMLテンプレート例
+├── .env.example
+├── docker-compose.yml
+└── docker-compose.dev.yml

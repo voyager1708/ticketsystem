@@ -11,8 +11,8 @@
 | # | 資料 | 内容 |
 |---|------|------|
 | 1 | `001_setup_v1_start.md` | 開発環境の起動。`GET /healthz = 200` と Swagger UI まで到達する |
-| 2 | `011_goal_steps_ai_pairing.md` と `010_Step0_Setup.md` 以降 | 実行ステップ目次・到達目標（Goal）・各 Step の詳細 |
-| 3 | `011_goal_steps_ai_pairing.md` | Step 1 以降の実行順。Cursor（AI）と一緒に必須3API を実装し、Swagger UI（`/swagger/`）で検証する |
+| 2 | `010_Step0_Setup.md` 以降（`010_Step1_CreateAccount.md` 〜 `010_Step4_Reward.md`） | 実行ステップ・到達目標（Goal）・各 Step の詳細 |
+| 3 | 上記 Step を順に実施 | Cursor（AI）と一緒に必須3API を実装し、Swagger UI（`/swagger/`）で検証する |
 
 ---
 
@@ -20,12 +20,8 @@
 
 | # | 資料 | こんなときに |
 |---|------|--------------|
-| 28 | `028_session_auth_reference.md` | 認証・セッション・Cookie で失敗したとき（裏の話） |
-| 20 | `020_swagger_auth_troubleshooting.md` | Swagger のログイン／ログアウトで失敗したとき |
-| 21 | `021_ticket_create_api_spec.md` | チケット作成APIの仕様を確認したいとき |
-| 22 | `022_architecture_reference.md` | 設計の背景や判断根拠を確認したいとき |
-| 23 | `023_slides_cell_map.md` | 授業スライドと手順の対応を確認したいとき |
-| — | `024_colab_execution_steps.md` | Colab で API を試す場合の手順（任意・今回は使用しない） |
+| 1 | `031_Ordinalx_API.md` | ベースAPI（Ordinal-X）の役割・エンドポイントを確認したいとき |
+| 2 | `040_ticket_create_api_spec.md` | チケット作成APIの仕様を確認したいとき |
 
 ---
 
