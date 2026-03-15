@@ -1,0 +1,53 @@
+services:
+  # Dockerfile で ARG や ENV を使っても、値を渡すには --build-arg オプションで明示的に指定する必要があります
+  # export UID=1001
+  # export GID=1001
+  # export USERNAME=app
+  # docker compose build --build-arg HOST_UID=1001 --build-arg HOST_GID=1001 --build-arg HOST_USERNAME=app --progress=plain --no-cache ticket_web
+  ticket_web:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+      args:
+        UID: ${HOST_UID:-1000}
+        GID: ${HOST_GID:-1000}
+        USERNAME: ${CONTAINER_USERNAME:-app}
+        NUM_WORKERS: ${NUM_WORKERS:-5}
+    ports:
+      - "8001:8001"
+    env_file:
+      - ./.env
+    # volumes は意図的に未設定。単体起動を防ぐため、必ず bin/start-dev または bin/start-prod を使うこと。
+    # docker compose のみで起動するとアプリがマウントされず失敗する。
+
+  # ticket_nginx:
+  #  build:
+  #     context: .         # プロジェクトルートをビルドコンテキストにする
+  #     dockerfile: ./nginx/Dockerfile
+  #  ports:
+  #    - 80:80
+  #    - 443:443  # SSL用のポートを開ける
+  #    - 1338:80
+  #    - 5443:443
+  #  depends_on:
+  #    - ticket_web
+  #  environment:
+  #    - TZ=Asia/Tokyo
+  #  volumes:
+  #    - /etc/letsencrypt:/etc/letsencrypt:ro
+  #    - ./app/static:/static:ro
+  #    - /mnt/extra/<ベースAPI>/app/static:/static_base:ro
+  #    - ./nginx/nginx.conf:/etc/nginx/conf.d/nginx.conf:ro  # Nginx設定をボリュームマウント
+
+  # ticket_db:
+  #  image: postgres:latest
+  #  restart: always
+  #  env_file:
+  #    - ./.env
+  #  ports:
+  #    - "127.0.0.1:5433:5432"  # ローカルホストのみ公開する設定
+  #  volumes:
+  #    - /mnt/lib/ticket_postgresql:/var/lib/postgresql/data
+  #  command: ["postgres", "-c", "log_timezone=Asia/Tokyo", "-c", "timezone=Asia/Tokyo"]
+  #  networks:
+  #    - default

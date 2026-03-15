@@ -1,0 +1,85 @@
+from django.urls import path
+from ticket_service.views import (
+    AccountCreateAPIView,
+    AuthLoginProxyAPIView,
+    AuthLogoutProxyAPIView,
+    AuthSignUpProxyAPIView,
+    AuthUserProxyAPIView,
+    RewardImageAPIView,
+    RewardListAPIView,
+    RewardCreateAPIView,
+    TicketCheckinAPIView,
+    TicketCreateAPIView,
+    TicketHtmlAPIView,
+    TicketImageAPIView,
+    TicketListAPIView,
+)
+
+urlpatterns = [
+    path(
+        'accounts/create',
+        AccountCreateAPIView.as_view(),
+        name='account-create',
+    ),
+    path(
+        'ext/v1/auth/sign-up',
+        AuthSignUpProxyAPIView.as_view(),
+        name='ext-auth-sign-up'
+    ),
+    path(
+        'ext/v1/auth/login',
+        AuthLoginProxyAPIView.as_view(),
+        name='ext-auth-login'
+    ),
+    path(
+        'ext/v1/auth/logout',
+        AuthLogoutProxyAPIView.as_view(),
+        name='ext-auth-logout'
+    ),
+    path(
+        'ext/v1/auth/user',
+        AuthUserProxyAPIView.as_view(),
+        name='ext-auth-user'
+    ),
+    path(
+        'ext/v1/ticket/create',
+        TicketCreateAPIView.as_view(),
+        name='ext-ticket-create'
+    ),
+    path(
+        'ext/v1/ticket/list',
+        TicketListAPIView.as_view(),
+        name='ext-ticket-list'
+    ),
+    path(
+        'ext/v1/ticket/image/<str:nft_origin>',
+        TicketImageAPIView.as_view(),
+        name='ext-ticket-image'
+    ),
+    path(
+        'ext/v1/ticket/checkin',
+        TicketCheckinAPIView.as_view(),
+        name='ext-ticket-checkin'
+    ),
+    path(
+        'ext/v1/ticket/html/<str:nft_origin>',
+        TicketHtmlAPIView.as_view(),
+        name='ext-ticket-html'
+    ),
+    path(
+        'ext/v1/reward/list',
+        RewardListAPIView.as_view(),
+        name='ext-reward-list'
+    ),
+    path(
+        'ext/v1/reward/image/<str:nft_origin>',
+        RewardImageAPIView.as_view(),
+        name='ext-reward-image'
+    ),
+    path(
+        'ext/v1/reward/create',
+        RewardCreateAPIView.as_view(),
+        name='ext-reward-create'
+    ),
+]
+

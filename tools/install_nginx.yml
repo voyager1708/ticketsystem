@@ -1,0 +1,16 @@
+---
+- name: Build/Start Nginx for ticket_system
+  hosts: all
+  become: true
+  vars:
+    project_root: /mnt/extra/ticket_system
+  tasks:
+    - name: Build Nginx image
+      ansible.builtin.command: docker compose build ticket_nginx
+      args:
+        chdir: "{{ project_root }}"
+
+    - name: Start Nginx service
+      ansible.builtin.command: docker compose up -d ticket_nginx
+      args:
+        chdir: "{{ project_root }}"

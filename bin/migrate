@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Docker 内で Django の migrate を実行する。プロジェクトルートから実行すること。
+set -euo pipefail
+CALLED_FROM="${PWD}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+if [[ "${CALLED_FROM}" == "${SCRIPT_DIR}" ]]; then
+  echo "Do not run from bin/. Run from project root:" >&2
+  echo "  cd ${ROOT} && ./bin/$(basename "$0")" >&2
+  exit 1
+fi
+cd "$ROOT"
+
+COMPOSE_ARGS=(-f docker-compose.yml)
+if [[ "${ROOT}" == *"ticketsystem-dev"* ]] || [[ "${ROOT}" == *"ticketsystem-start"* ]]; then
+  COMPOSE_ARGS+=(-f docker-compose.dev.yml)
+elif [[ "${ROOT}" == *"ticketsystem"* ]]; then
+  COMPOSE_ARGS+=(-f docker-compose.prod.yml)
+else
+  echo "Current project path does not look like ticketsystem/ticketsystem-dev/ticketsystem-start. Abort." >&2
+  exit 1
+fi
+
+# 起動中なら exec、そうでなければ run --rm（entrypoint を空にして migrate のみ実行）
+if docker compose "${COMPOSE_ARGS[@]}" ps -q ticket_web 2>/dev/null | grep -q .; then
+  exec docker compose "${COMPOSE_ARGS[@]}" exec ticket_web python manage.py migrate "$@"
+else
+  exec docker compose "${COMPOSE_ARGS[@]}" run --rm --entrypoint "" ticket_web python manage.py migrate "$@"
+fi
