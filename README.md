@@ -79,28 +79,52 @@ cp .env.example .env
 - `BASE_API_URL`: ベースAPIのURL
 - `HOST_UID`, `HOST_GID`: コンテナ内のユーザーID/GID
 
-### 2. Docker Composeで起動
+### 2. Dockerサービスの起動確認
+
+Docker Engine が起動していないと `docker compose` は実行できません。先に動作確認してください。
 
 ```bash
-docker compose up -d
+docker info
 ```
 
-### 3. データベースマイグレーション
+エラーになる場合は Docker サービスを起動します（Linux）。
 
 ```bash
-docker compose exec ticket_web python manage.py migrate
+sudo systemctl start docker
+sudo systemctl enable docker
 ```
 
-### 4. スーパーユーザーの作成（オプション）
+WSL2 + Docker Desktop を利用している場合は、Docker Desktop 側を起動してください。
+
+### 3. Docker Composeで起動
+
+開発環境では `docker-compose.dev.yml` を併用してください。  
+（推奨）`bin/start-dev` を使うと必要な Compose ファイルが自動で指定されます。
 
 ```bash
-docker compose exec ticket_web python manage.py createsuperuser
+./bin/start-dev
+# もしくは:
+# docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --force-recreate
+```
+
+### 4. データベースマイグレーション
+
+```bash
+./bin/migrate
+# もしくは:
+# docker compose -f docker-compose.yml -f docker-compose.dev.yml exec ticket_web python manage.py migrate
 ```
 
 ### 5. 動作確認
 
 ```bash
 curl -fsS http://localhost:8001/healthz
+```
+
+### 6. スーパーユーザーの作成（オプション）
+
+```bash
+docker compose exec ticket_web python manage.py createsuperuser
 ```
 
 `200` が返れば起動成功です。ブラウザで `http://localhost:8001/swagger/` を開いて API 仕様を確認できます。
