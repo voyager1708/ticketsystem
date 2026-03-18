@@ -25,7 +25,7 @@ from drf_spectacular.views import (
     SpectacularRedocView,
     SpectacularSwaggerView,
 )
-from ticket_service.views import CustomLoginView, LogoutRedirectView, TicketsPageView
+from ticket_service.views import CustomLoginView, LogoutRedirectView
 
 def healthz(request):
     """Step 0: ヘルスチェック用。200 を返す。"""
@@ -37,7 +37,6 @@ urlpatterns = [
     path('healthz', healthz),
     path('', RedirectView.as_view(url='/swagger/', permanent=False), name='root-redirect'),
     path('api/', include('ticket_service.urls')),
-    path('tickets/', TicketsPageView.as_view(), name='tickets'),
     # Custom login/logout placed BEFORE contrib auth include
     path('accounts/login/', CustomLoginView.as_view(), name='login'),
     path('accounts/logout/', LogoutRedirectView.as_view(), name='logout'),

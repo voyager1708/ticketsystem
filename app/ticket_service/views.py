@@ -17,7 +17,7 @@ from rest_framework import status
 from rest_framework.permissions import AllowAny
 from rest_framework.authentication import SessionAuthentication
 from rest_framework.parsers import JSONParser, FormParser, MultiPartParser
-from drf_spectacular.utils import OpenApiParameter, extend_schema, inline_serializer
+from drf_spectacular.utils import OpenApiParameter, extend_schema, inline_serializer, OpenApiRequest, OpenApiTypes
 from drf_spectacular.extensions import OpenApiAuthenticationExtension
 
 from ticket_service.models import Account, TicketDesign, TicketCheckinRecord, TicketCheckinUrl
@@ -677,6 +677,194 @@ class AuthUserProxyAPIView(BaseAPIProxyMixin, APIView):
         if not _has_session_credentials(request):
             return JsonResponse({"detail": UNAUTHENTICATED_DETAIL}, status=401)
         return self._proxy_request(request, "GET", "/api/v1/user/info")
+
+
+class TicketCreateAPIView(APIView):
+    """
+    チケットNFT作成API
+    POST /api/ext/v1/ticket/create
+    """
+
+    authentication_classes = [CsrfExemptSessionAuthentication]
+    permission_classes = [AllowAny]
+    parser_classes = [MultiPartParser, FormParser]
+
+    @extend_schema(
+        summary="Create Ticket NFT",
+        description="チケットNFTを作成する。event_name, event_date, ticket_html（ファイル）必須。venue, seat, recipient_paymail は任意。",
+        tags=["ticket"],
+        request={
+            'multipart/form-data': {
+                'type': 'object',
+                'properties': {
+                    'event_name': {
+                        'type': 'string',
+                        'description': '必須'
+                    },
+                    'event_date': {
+                        'type': 'string',
+                        'description': '必須'
+                    },
+                    'ticket_html': {
+                        'type': 'string',
+                        'format': 'binary',
+                        'description': '必須'
+                    },
+                    'venue': {
+                        'type': 'string',
+                        'description': '任意'
+                    },
+                    'seat': {
+                        'type': 'string',
+                        'description': '任意'
+                    },
+                    'recipient_paymail': {
+                        'type': 'string',
+                        'description': '任意'
+                    }
+                },
+                'required': ['event_name', 'event_date', 'ticket_html']
+            }
+        },
+        responses={
+            201: inline_serializer(
+                name="TicketCreateSuccess",
+                fields={
+                    "status": serializers.CharField(),
+                    "message": serializers.CharField(),
+                    "nft_origin": serializers.CharField(),
+                    "transaction_id": serializers.CharField(),
+                    "ticket_image_url": serializers.CharField(),
+                    "checkin_url": serializers.CharField(),
+                    "nft_information": serializers.DictField(),
+                },
+            ),
+            400: inline_serializer(
+                name="TicketCreateBadRequest",
+                fields={"error": serializers.CharField()},
+            ),
+            401: inline_serializer(
+                name="TicketCreateUnauthorized",
+                fields={"detail": serializers.CharField()},
+            ),
+            500: inline_serializer(
+                name="TicketCreateServerError",
+                fields={"error": serializers.CharField()},
+            ),
+        },
+    )
+    def post(self, request):
+        # 認証チェック
+        session_cookies = self._extract_session_cookies(request)
+        if not session_cookies:
+            return Response({"detail": UNAUTHENTICATED_DETAIL}, status=status.HTTP_401_UNAUTHORIZED)
+
+        # 必須パラメータのバリデーション
+        event_name = request.data.get('event_name')
+        event_date = request.data.get('event_date')
+        ticket_html_file = request.FILES.get('ticket_html')
+        
+        if not event_name or not event_name.strip():
+            return Response({"error": "event_name is required"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        if not event_date or not event_date.strip():
+            return Response({"error": "event_date is required"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        if not ticket_html_file:
+            return Response({"error": "ticket_html is required (HTML file with styles)"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # 任意パラメータの取得
+        venue = request.data.get('venue', '').strip()
+        seat = request.data.get('seat', '').strip()
+        recipient_paymail = request.data.get('recipient_paymail', '').strip()
+
+        try:
+            # HTMLファイルの内容を読み込み
+            ticket_html_content = ticket_html_file.read()
+            
+            # UTF-8であることを確認
+            try:
+                ticket_html_str = ticket_html_content.decode('utf-8')
+            except UnicodeDecodeError:
+                return Response({"error": "ticket_html must be UTF-8 text"}, status=status.HTTP_400_BAD_REQUEST)
+
+            # TicketService を使用してHTMLを生成
+            ticket_service = TicketService()
+            rendered_html = ticket_service.render_ticket_html_for_creation(
+                event_name=event_name.strip(),
+                event_date=event_date.strip(),
+                venue=venue,
+                seat=seat,
+                holder_paymail=recipient_paymail,
+                layout_html=ticket_html_str,
+            )
+
+            # NFTメタデータを構築
+            metadata = ticket_service.build_ticket_metadata(
+                event_name=event_name.strip(),
+                event_date=event_date.strip(),
+                venue=venue,
+                seat=seat,
+                holder_paymail=recipient_paymail,
+            )
+
+            # BaseAPIClient を使用してNFTを作成
+            api_client = BaseAPIClient()
+            html_filename = 'ticket.html'  # 拡張子を.htmlにしてHTMLとして認識させる
+            nft_name = f"{event_name.strip()} Ticket"
+            
+            nft_result = api_client.create_ticket_nft(
+                image_file=rendered_html.encode('utf-8'),
+                image_filename=html_filename,
+                nft_name=nft_name,
+                metadata=metadata,
+                session_cookies=session_cookies,
+                recipient_paymail=recipient_paymail if recipient_paymail else None,
+            )
+
+            if not nft_result:
+                return Response({"error": "Failed to create NFT"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+            # チェックインURLを生成
+            nft_origin = nft_result.get('nft_information', {}).get('nft_origin')
+            if not nft_origin:
+                return Response({"error": "Failed to create NFT - missing nft_origin"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+            checkin_token = ticket_service.build_checkin_token(nft_origin=nft_origin)
+            checkin_url = request.build_absolute_uri(f"/api/ext/v1/ticket/checkin?token={checkin_token}")
+
+            # レスポンスを構築
+            response_data = {
+                "status": "success",
+                "message": "Ticket NFT created successfully",
+                "nft_origin": nft_origin,
+                "transaction_id": nft_result.get('transaction_id', ''),
+                "ticket_image_url": f"/api/ext/v1/ticket/image/{nft_origin}",
+                "checkin_url": checkin_url,
+                "nft_information": nft_result.get('nft_information', {}),
+            }
+
+            return Response(response_data, status=status.HTTP_201_CREATED)
+
+        except ValueError as e:
+            # HTMLレンダリングのバリデーションエラー
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            logger.error(f"Unexpected error in ticket creation: {e}")
+            return Response({"error": "Failed to render ticket HTML"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def _extract_session_cookies(self, request):
+        """セッションクッキーを抽出（他のAPIViewと同様の実装）"""
+        base_api_cookies = request.session.get("base_api_cookies", {})
+        if base_api_cookies:
+            return base_api_cookies
+        cookies = {}
+        if hasattr(request, "COOKIES"):
+            if request.COOKIES.get("sessionid"):
+                cookies["sessionid"] = request.COOKIES.get("sessionid")
+            if request.COOKIES.get("csrftoken"):
+                cookies["csrftoken"] = request.COOKIES.get("csrftoken")
+        return cookies
 
 
 class TicketListAPIView(APIView):
@@ -1398,143 +1586,3 @@ class RewardCreateAPIView(APIView):
             if request.COOKIES.get("csrftoken"):
                 cookies["csrftoken"] = request.COOKIES.get("csrftoken")
         return cookies
-
-
-class TicketsPageView(View):
-    """
-    マイチケット・報酬表示ページ。
-    GET /tickets/
-    既存の ticket/list と reward/list API を内部 HTTP で呼び、結果を表示する。
-    """
-
-    def get(self, request):
-        ticket_list_url = request.build_absolute_uri("/api/ext/v1/ticket/list")
-        reward_list_url = request.build_absolute_uri("/api/ext/v1/reward/list")
-        cookies = dict(request.COOKIES) if request.COOKIES else {}
-
-        try:
-            ticket_resp = requests.get(ticket_list_url, cookies=cookies, timeout=10)
-            if ticket_resp.status_code == 401:
-                return redirect("/accounts/login/?next=/tickets/")
-            ticket_list = []
-            if ticket_resp.status_code == 200:
-                data = ticket_resp.json()
-                ticket_list = data.get("results") or []
-        except Exception:
-            ticket_list = []
-
-        # 各チケットの使用済み状態を TicketCheckinRecord から付与
-        # #region agent log
-        _lp = "/home/ds9/ticketsystem-start/.cursor/debug-686d38.log"
-        _json = __import__("json")
-        try:
-            _rec_nft = list(TicketCheckinRecord.objects.values_list("nft_origin", flat=True))
-            with open(_lp, "a") as _f:
-                _f.write(_json.dumps({"sessionId": "686d38", "hypothesisId": "used_check", "location": "TicketsPageView.used_state", "message": "ticket_list vs records", "data": {"ticket_count": len(ticket_list), "ticket_nft_origins": [item.get("nft_origin") for item in ticket_list], "record_nft_origins": _rec_nft}, "timestamp": __import__("time").time() * 1000}) + "\n")
-        except Exception:
-            pass
-        # #endregion
-        for item in ticket_list:
-            nft_origin = item.get("nft_origin")
-            record = TicketCheckinRecord.objects.filter(nft_origin=nft_origin).first() if nft_origin else None
-            item["used"] = record is not None
-            item["used_at"] = record.used_at.strftime("%Y-%m-%d %H:%M") if record and record.used_at else None
-            # #region agent log
-            try:
-                with open(_lp, "a") as _f:
-                    _f.write(_json.dumps({"sessionId": "686d38", "hypothesisId": "used_check", "location": "TicketsPageView.used_per_item", "message": "lookup result", "data": {"nft_origin": nft_origin, "found_record": record is not None, "used_at": item.get("used_at")}, "timestamp": __import__("time").time() * 1000}) + "\n")
-            except Exception:
-                pass
-            # #endregion
-
-        try:
-            reward_resp = requests.get(reward_list_url, cookies=cookies, timeout=10)
-            if reward_resp.status_code == 401:
-                return redirect("/accounts/login/?next=/tickets/")
-            reward_list = []
-            if reward_resp.status_code == 200:
-                data = reward_resp.json()
-                reward_list = data.get("results") or []
-        except Exception:
-            reward_list = []
-
-        return render(
-            request,
-            "ticket_service/tickets.html",
-            {"ticket_list": ticket_list, "reward_list": reward_list},
-        )
-
-
-class RewardImageAPIView(View):
-    """
-    報酬NFT画像取得API。
-    GET /api/ext/v1/reward/image/<nft_origin>
-    NFT の生データを取得し、画像として返す。未ログインは 401。
-    """
-
-    def get(self, request, nft_origin: str):
-        _lp = "/home/ds9/ticketsystem-start/.cursor/debug-686d38.log"
-        _json = __import__("json")
-        _time = __import__("time").time
-        # #region agent log
-        try:
-            _c = _get_proxy_cookies(request)
-            with open(_lp, "a") as _f:
-                _f.write(_json.dumps({"sessionId": "686d38", "hypothesisId": "A", "location": "RewardImageAPIView.get.entry", "message": "reward image request", "data": {"nft_origin": nft_origin, "has_cookies": bool(_c), "cookie_keys": list(_c.keys()) if _c else []}, "timestamp": _time() * 1000}) + "\n")
-        except Exception:
-            pass
-        # #endregion
-        cookies = _get_proxy_cookies(request)
-        if not cookies:
-            # #region agent log
-            try:
-                with open(_lp, "a") as _f:
-                    _f.write(_json.dumps({"sessionId": "686d38", "hypothesisId": "A", "location": "RewardImageAPIView.get.401", "message": "no cookies", "data": {}, "timestamp": _time() * 1000}) + "\n")
-            except Exception:
-                pass
-            # #endregion
-            return HttpResponse(
-                '{"detail": "Authentication credentials were not provided."}',
-                status=401,
-                content_type="application/json",
-            )
-        api_client = BaseAPIClient()
-        raw_bytes = api_client.get_nft_raw(nft_origin, cookies)
-        # #region agent log
-        try:
-            with open(_lp, "a") as _f:
-                _f.write(_json.dumps({"sessionId": "686d38", "hypothesisId": "B", "location": "RewardImageAPIView.get.after_get_nft_raw", "message": "raw_bytes result", "data": {"raw_is_none": raw_bytes is None, "raw_len": len(raw_bytes) if raw_bytes else 0}, "timestamp": _time() * 1000}) + "\n")
-        except Exception:
-            pass
-        # #endregion
-        if not raw_bytes:
-            return HttpResponse(
-                '{"error": "NFT not found"}',
-                status=404,
-                content_type="application/json",
-            )
-        body = strip_ordinals_envelope(raw_bytes)
-        nft_data = api_client.get_nft(nft_origin, cookies)
-        content_type = "image/png"
-        if isinstance(nft_data, dict):
-            ct = nft_data.get("content_type") or nft_data.get("content-type")
-            if ct and ("image/" in str(ct) or "image/" in str(ct).lower()):
-                content_type = str(ct).split(";")[0].strip()
-            else:
-                name = (nft_data.get("original_file_name") or "") or ""
-                name_lower = name.lower()
-                if name_lower.endswith(".jpg") or name_lower.endswith(".jpeg"):
-                    content_type = "image/jpeg"
-                elif name_lower.endswith(".webp"):
-                    content_type = "image/webp"
-                elif name_lower.endswith(".gif"):
-                    content_type = "image/gif"
-        # #region agent log
-        try:
-            _pre = body[:24].hex() if body and len(body) >= 24 else (body.hex() if body else "")
-            with open(_lp, "a") as _f:
-                _f.write(_json.dumps({"sessionId": "686d38", "hypothesisId": "C", "location": "RewardImageAPIView.get.before_return", "message": "body and content_type", "data": {"body_len": len(body) if body else 0, "content_type": content_type, "body_prefix_hex": _pre}, "timestamp": _time() * 1000}) + "\n")
-        except Exception:
-            pass
-        # #endregion
-        return HttpResponse(body, content_type=content_type)

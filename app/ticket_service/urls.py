@@ -5,7 +5,6 @@ from ticket_service.views import (
     AuthLogoutProxyAPIView,
     AuthSignUpProxyAPIView,
     AuthUserProxyAPIView,
-    RewardImageAPIView,
     RewardListAPIView,
     RewardCreateAPIView,
     TicketCheckinAPIView,
@@ -45,6 +44,11 @@ urlpatterns = [
         TicketListAPIView.as_view(),
         name='ext-ticket-list'
     ),
+    # path(
+    #     'ext/v1/ticket/create',
+    #     TicketCreateAPIView.as_view(),
+    #     name='ext-ticket-create'
+    # ),
     path(
         'ext/v1/ticket/image/<str:nft_origin>',
         TicketImageAPIView.as_view(),
@@ -64,11 +68,6 @@ urlpatterns = [
         'ext/v1/reward/list',
         RewardListAPIView.as_view(),
         name='ext-reward-list'
-    ),
-    path(
-        'ext/v1/reward/image/<str:nft_origin>',
-        RewardImageAPIView.as_view(),
-        name='ext-reward-image'
     ),
     path(
         'ext/v1/reward/create',
