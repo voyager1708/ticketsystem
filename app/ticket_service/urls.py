@@ -82,4 +82,3 @@ urlpatterns = [
         name='ext-reward-create'
     ),
 ]
-
