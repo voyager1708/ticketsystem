@@ -169,10 +169,11 @@ python manage.py runserver 0.0.0.0:8000
 
 - **Git** が入っていること（Ubuntu なら `sudo apt install -y git` で導入可能）。
 - このリポジトリを手元にクローンし、ハンズオン用ブランチに切り替えます。
+- 以下の部分は一般ユーザの状態で作業します。
 
 ```bash
 cd ~
-git clone https://github.com/voyager1708/ticketsystem.git
+git clone https://github.com/voyager1708/ticketsystem.git　ticketsystem-start
 cd ticketsystem-start
 git checkout handson/v1-start
 # または: git switch handson/v1-start
@@ -196,7 +197,7 @@ git checkout handson/v1-start
 2. **コンテナのビルド・起動**  
    **`bin/start-dev` を使って起動**（内部で `docker compose -f docker-compose.yml -f docker-compose.dev.yml` を実行）。
    ```bash
-   docker compose -f docker-compose.yml -f docker-compose.dev.yml build --no-cache ticket_web
+   sudo docker compose -f docker-compose.yml -f docker-compose.dev.yml build --no-cache ticket_web
    ./bin/start-dev
    ```
    設定変更やイメージ更新を反映したいときは `./bin/restart-dev` を使う（再起動ではなく再作成で反映）。  
