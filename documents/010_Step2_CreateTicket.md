@@ -45,6 +45,8 @@ POST /api/ext/v1/ticket/create を実装したい。
   - documents/021_ticket_create_api_spec.md でリクエスト・レスポンスの形式とエラーの扱いを確認します。
   - app/ticket_service/services/ticket_service.py の TicketService と app/ticket_service/services/base_api_client.py の BaseAPIClient の既存メソッドを参照し、チケット作成に使うメソッド名・引数・戻り値を合わせます。
   - エラーメッセージの文言・201 レスポンスのキー名・認証（_extract_session_cookies の動き）・DRF の authentication_classes / parser_classes / @extend_schema の内容を、既存コードのスタイルに揃えて実装します。
+  - **Swagger UI で ticket_html がファイルアップロードとして正しく表示されるよう、@extend_schema の request は multipart/form-data 形式で定義し、format: 'binary' を指定してください。**
+
 ```
 
 ### ② 実施後の確認
