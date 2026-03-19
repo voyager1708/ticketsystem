@@ -173,7 +173,7 @@ python manage.py runserver 0.0.0.0:8000
 
 ```bash
 cd ~
-git clone https://github.com/voyager1708/ticketsystem.git　ticketsystem-start
+git clone https://github.com/voyager1708/ticketsystem.git ticketsystem-start
 cd ticketsystem-start
 git checkout handson/v1-start
 # または: git switch handson/v1-start
