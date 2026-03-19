@@ -5,6 +5,7 @@ from pathlib import Path
 import requests
 from django import forms
 from django.conf import settings
+from django.core.files.base import ContentFile
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
 from django.utils.dateparse import parse_datetime
@@ -1443,7 +1444,7 @@ class TicketCheckinAPIView(APIView):
 
 class RewardCreateAPIView(APIView):
     """
-    報酬NFT作成API
+    チェックイン報酬画像登録API
     POST /api/ext/v1/reward/create
     """
     authentication_classes = [CsrfExemptSessionAuthentication]
@@ -1451,11 +1452,11 @@ class RewardCreateAPIView(APIView):
     parser_classes = [JSONParser, FormParser, MultiPartParser]
 
     @extend_schema(
-        summary="Create reward NFT",
+        summary="Register check-in reward image",
         description=(
-            "報酬NFTを作成します。reward_image を未指定の場合は "
-            "image_samples/SendaiArt1_Reward.jpg を使用します。"
-            "受領者は常に実行ユーザー（自分）です。"
+            "チェックイン時の報酬NFTに使う画像を登録します。"
+            "reward_image を未指定の場合は image_samples/SendaiArt1_Reward.jpg を登録します。"
+            "このAPIはNFTを作成しません。"
         ),
         tags=["reward"],
         request={
@@ -1463,19 +1464,19 @@ class RewardCreateAPIView(APIView):
                 "type": "object",
                 "properties": {
                     "reward_image": {"type": "string", "format": "binary", "description": "報酬画像（省略可）"},
-                    "reward_name": {"type": "string", "description": "報酬NFT名（省略時: Check-in Reward）"},
                 },
             },
         },
         responses={
-            201: inline_serializer(
-                name="RewardCreateSuccess",
+            200: inline_serializer(
+                name="RewardRegisterSuccess",
                 fields={
                     "status": serializers.CharField(),
                     "message": serializers.CharField(),
-                    "transaction_id": serializers.CharField(allow_null=True),
-                    "nft_origin": serializers.CharField(allow_null=True),
-                    "nft_information": serializers.JSONField(allow_null=True),
+                    "ticket_design_id": serializers.IntegerField(),
+                    "image_name": serializers.CharField(),
+                    "image_url": serializers.CharField(allow_null=True),
+                    "used_default_image": serializers.BooleanField(),
                 },
             ),
             400: inline_serializer(name="RewardCreateBadRequest", fields={"error": serializers.CharField()}),
@@ -1492,7 +1493,7 @@ class RewardCreateAPIView(APIView):
             )
 
         reward_file = request.FILES.get("reward_image")
-        reward_name = request.data.get("reward_name") or "Check-in Reward"
+        used_default_image = False
 
         if reward_file:
             image_bytes = reward_file.read()
@@ -1503,6 +1504,7 @@ class RewardCreateAPIView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
         else:
+            used_default_image = True
             # 既定画像（image_samples/SendaiArt1_Reward.jpg）を使用
             default_image_path = Path(settings.BASE_DIR) / "image_samples" / "SendaiArt1_Reward.jpg"
             if not default_image_path.exists():
@@ -1525,40 +1527,23 @@ class RewardCreateAPIView(APIView):
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
 
-        metadata = {
-            "ticket": {
-                "reward_type": "checkin_reward",
-                "source": "ext_reward_create_api",
-            }
-        }
-        if reward_name:
-            metadata["ticket"]["reward_name"] = reward_name
+        active_design = TicketDesign.get_active()
+        if not active_design:
+            active_design = TicketDesign.objects.create(name="Default", is_active=True)
+        active_design.checkin_reward_image.save(image_filename, ContentFile(image_bytes), save=True)
 
-        api_client = BaseAPIClient()
-        result = api_client.create_reward_nft(
-            image_file=image_bytes,
-            image_filename=image_filename,
-            metadata=metadata,
-            # 受領者は未指定にしてベースAPI既定動作（実行ユーザー＝自分）に委ねる
-            recipient_paymail=None,
-            session_cookies=session_cookies,
-        )
-        if not result:
-            return Response(
-                {"error": "Failed to create reward NFT"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
-
-        nft_info = result.get("nft_information", {}) if isinstance(result, dict) else {}
         return Response(
             {
                 "status": "success",
-                "message": "Reward NFT created successfully",
-                "transaction_id": result.get("transaction_id") if isinstance(result, dict) else None,
-                "nft_origin": nft_info.get("nft_origin"),
-                "nft_information": nft_info,
+                "message": "Check-in reward image registered successfully",
+                "ticket_design_id": active_design.id,
+                "image_name": Path(active_design.checkin_reward_image.name).name,
+                "image_url": (
+                    active_design.checkin_reward_image.url if active_design.checkin_reward_image else None
+                ),
+                "used_default_image": used_default_image,
             },
-            status=status.HTTP_201_CREATED,
+            status=status.HTTP_200_OK,
         )
 
     def _extract_session_cookies(self, request):
