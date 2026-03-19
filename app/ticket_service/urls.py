@@ -6,6 +6,7 @@ from ticket_service.views import (
     AuthSignUpProxyAPIView,
     AuthUserProxyAPIView,
     RewardCreateAPIView,
+    RewardListAPIView,
     TicketCheckinAPIView,
     TicketHtmlAPIView,
     TicketImageAPIView,
